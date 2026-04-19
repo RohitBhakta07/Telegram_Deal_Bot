@@ -1,0 +1,255 @@
+{% extends 'super_admin/base.html' %}
+{% block title %}Channels{% endblock %}
+{% block page_title %}Channels{% endblock %}
+{% block page_subtitle %}Manage Telegram channels and their bot connections{% endblock %}
+
+{% block content %}
+<div class="p-7 space-y-6 fade-up">
+
+  <!-- ── Add New Channel ──────────────────────────────────────────────── -->
+  <div class="rounded-2xl glass border border-edge p-6">
+    <h2 class="font-display font-bold text-white mb-5 flex items-center gap-2">
+      <span class="material-symbols-outlined text-p text-[20px]">add_circle</span>
+      Add New Channel
+    </h2>
+    <form method="POST" action="{{ url_for('super_admin.add_channel') }}"
+          class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">
+          Telegram Channel ID
+        </label>
+        <div class="relative">
+          <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2
+                       text-slate-500 text-[18px]">alternate_email</span>
+          <input name="channel_id" required placeholder="e.g. @mychannel or -100123456789"
+                 class="input-field pl-10">
+        </div>
+      </div>
+
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">
+          Channel Name
+        </label>
+        <div class="relative">
+          <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2
+                       text-slate-500 text-[18px]">title</span>
+          <input name="channel_name" required placeholder="e.g. Daily Deals India"
+                 class="input-field pl-10">
+        </div>
+      </div>
+
+      <div>
+        <button type="submit" class="w-full btn accent-bar text-white font-semibold py-3 rounded-xl
+                                      shadow-lg shadow-p/20 hover:opacity-90">
+          <span class="material-symbols-outlined text-[18px]">add</span> Add Channel
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ── Channels Table ───────────────────────────────────────────────── -->
+  <div class="rounded-2xl glass border border-edge overflow-hidden">
+    <div class="px-6 py-4 border-b border-edge flex items-center justify-between">
+      <h2 class="font-display font-bold text-white flex items-center gap-2">
+        <span class="material-symbols-outlined text-p text-[20px]">hub</span>
+        Connected Channels
+        <span class="badge badge-cyan ml-1">{{ channels|length }}</span>
+      </h2>
+      <div class="relative">
+        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2
+                     text-slate-600 text-[16px]">search</span>
+        <input id="ch-search" type="text" placeholder="Search channels…"
+               class="bg-dark border border-edge rounded-xl pl-9 pr-4 py-2 text-xs text-slate-300
+                      placeholder-slate-600 focus:outline-none focus:border-p transition-colors w-48">
+      </div>
+    </div>
+
+    {% if channels %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-edge text-left">
+            {% for col in ['Channel ID', 'Name', 'Admin', 'Panel URL', 'Status', 'Actions'] %}
+            <th class="px-5 py-3 text-xs text-slate-500 font-semibold uppercase tracking-wider whitespace-nowrap">
+              {{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-edge/50" id="ch-tbody">
+          {% for channel in channels %}
+          <tr class="trow transition-colors">
+
+            <!-- Channel ID -->
+            <td class="px-5 py-3.5">
+              <p class="font-mono text-xs text-p">{{ channel.channel_id }}</p>
+            </td>
+
+            <!-- Name -->
+            <td class="px-5 py-3.5 font-semibold text-white">{{ channel.channel_name }}</td>
+
+            <!-- Admin -->
+            <td class="px-5 py-3.5">
+              {% if channel.admin %}
+              <div class="flex items-center gap-2">
+                <div class="size-6 rounded-full bg-violet-600 flex items-center justify-center
+                            text-white text-[10px] font-bold flex-shrink-0">
+                  {{ channel.admin.username[0].upper() }}
+                </div>
+                <span class="text-sm text-slate-300">{{ channel.admin.username }}</span>
+              </div>
+              {% else %}
+              <span class="text-xs text-slate-600">No admin</span>
+              {% endif %}
+            </td>
+
+            <!-- Panel URL -->
+            <td class="px-5 py-3.5">
+              {% if channel.admin %}
+              <div class="flex items-center gap-2">
+                <a href="{{ url_for('channel_admin.panel_dashboard', slug=channel.admin.panel_slug) }}"
+                   target="_blank" class="font-mono text-xs text-p hover:underline">
+                  /channel/{{ channel.admin.panel_slug }}
+                </a>
+                <button onclick="copyToClipboard(window.location.origin+'/channel/{{ channel.admin.panel_slug }}/', this)"
+                        class="text-slate-600 hover:text-slate-300 transition-colors" data-tip="Copy URL">
+                  <span class="material-symbols-outlined text-[14px]">content_copy</span>
+                </button>
+              </div>
+              {% else %}
+              <span class="text-slate-600 text-xs">—</span>
+              {% endif %}
+            </td>
+
+            <!-- Status -->
+            <td class="px-5 py-3.5">
+              {% if channel.is_active %}
+              <span class="badge badge-active">
+                <span class="size-1.5 rounded-full bg-emerald-400"></span> Active
+              </span>
+              {% else %}
+              <span class="badge badge-paused">
+                <span class="size-1.5 rounded-full bg-slate-500"></span> Paused
+              </span>
+              {% endif %}
+            </td>
+
+            <!-- Actions -->
+            <td class="px-5 py-3.5">
+              <div class="flex items-center gap-1.5">
+
+                <!-- Toggle active/paused -->
+                <form method="POST" action="{{ url_for('super_admin.toggle_channel') }}">
+                  <input type="hidden" name="channel_id" value="{{ channel.channel_id }}">
+                  <button type="submit"
+                          data-tip="{{ 'Pause' if channel.is_active else 'Activate' }}"
+                          class="size-7 rounded-lg flex items-center justify-center transition-colors
+                                 {{ 'bg-slate-700 text-slate-300 hover:bg-slate-600' if channel.is_active else 'bg-emerald-900 text-emerald-400 hover:bg-emerald-800' }}">
+                    <span class="material-symbols-outlined text-[14px]">
+                      {{ 'pause' if channel.is_active else 'play_arrow' }}
+                    </span>
+                  </button>
+                </form>
+
+                <!-- Create admin (if no admin) -->
+                {% if not channel.admin %}
+                <button type="button"
+                        onclick="openCreateAdmin('{{ channel.channel_id }}', '{{ channel.channel_name }}')"
+                        data-tip="Create Admin"
+                        class="size-7 rounded-lg bg-violet-950 text-violet-400
+                               hover:bg-violet-900 transition-colors flex items-center justify-center">
+                  <span class="material-symbols-outlined text-[14px]">person_add</span>
+                </button>
+                {% endif %}
+
+                <!-- Delete channel -->
+                <form method="POST" action="{{ url_for('super_admin.delete_channel') }}"
+                      onsubmit="return confirmDelete('Delete {{ channel.channel_name }}? All data (categories, deals, admin) will be permanently removed.')">
+                  <input type="hidden" name="channel_id" value="{{ channel.channel_id }}">
+                  <button type="submit" data-tip="Delete Channel"
+                          class="size-7 rounded-lg bg-red-950 text-red-400
+                                 hover:bg-red-900 transition-colors flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[14px]">delete</span>
+                  </button>
+                </form>
+
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="py-14 text-center text-slate-600">
+      <span class="material-symbols-outlined text-5xl block mb-3 opacity-30">hub</span>
+      <p class="text-sm">No channels added yet.</p>
+      <p class="text-xs mt-1">Add a channel above to get started.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- ── Create Admin Modal ──────────────────────────────────────────────── -->
+<div id="createAdminModal" class="modal-backdrop hidden">
+  <div class="modal-card slide-down" style="max-width:28rem">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-display font-bold text-white">Create Channel Admin</h3>
+      <button onclick="closeModal('createAdminModal')" class="text-slate-500 hover:text-white transition-colors">
+        <span class="material-symbols-outlined text-[20px]">close</span>
+      </button>
+    </div>
+    <p class="text-xs text-slate-500 mb-5">
+      Creating admin for:
+      <span id="modalChannelName" class="text-white font-semibold ml-1"></span>
+    </p>
+    <form method="POST" action="{{ url_for('super_admin.create_admin') }}">
+      <input type="hidden" name="channel_id" id="modalChannelId">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">Username</label>
+          <input name="username" required placeholder="e.g. rahul_admin" class="input-field">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">
+            Password <span class="text-slate-600 normal-case">(min 8 chars)</span>
+          </label>
+          <input name="password" type="password" required minlength="8" placeholder="••••••••"
+                 class="input-field">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">
+            Panel Slug <span class="text-slate-600 normal-case">(URL path)</span>
+          </label>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-600 whitespace-nowrap">/channel/</span>
+            <input name="panel_slug" id="modal-slug" required placeholder="my-channel"
+                   class="input-field" pattern="[a-z0-9\-_]+">
+          </div>
+          <p class="text-[10px] text-slate-600 mt-1">Only lowercase, numbers, hyphens, underscores</p>
+        </div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button type="button" onclick="closeModal('createAdminModal')" class="btn btn-ghost flex-1">Cancel</button>
+        <button type="submit" class="btn flex-1 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl">
+          <span class="material-symbols-outlined text-[16px]">person_add</span> Create Admin
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function openCreateAdmin(channelId, channelName) {
+    document.getElementById('modalChannelId').value = channelId;
+    document.getElementById('modalChannelName').textContent = channelName;
+    openModal('createAdminModal');
+  }
+  // Table filter
+  initTableSearch('ch-search', 'ch-tbody');
+</script>
+{% endblock %}

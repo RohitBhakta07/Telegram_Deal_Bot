@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error — Channel Panel</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+  <style>
+    body { font-family:'DM Sans',sans-serif; background:#080e14; }
+    h1   { font-family:'Syne',sans-serif; }
+    .dot-grid { background-image:radial-gradient(circle,#1a2840 1px,transparent 1px); background-size:28px 28px; }
+  </style>
+</head>
+<body class="dot-grid text-slate-200 min-h-screen flex items-center justify-center p-4">
+  <div class="text-center max-w-sm">
+    <p class="font-display text-8xl font-extrabold text-slate-800 leading-none mb-2">404</p>
+    <span class="material-symbols-outlined text-5xl text-red-500 mb-4 block">link_off</span>
+    <h1 class="text-xl font-bold text-white mb-2">Panel Not Found</h1>
+    <p class="text-sm text-slate-500 mb-6">{{ message or 'This admin panel does not exist.' }}</p>
+    <p class="text-xs text-slate-600">Contact your Super Admin for the correct panel URL.</p>
+  </div>
+</body>
+</html>

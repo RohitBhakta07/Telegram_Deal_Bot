@@ -1,0 +1,7 @@
+flask
+requests
+playwright
+telethon
+pytrends
+pandas
+psutil

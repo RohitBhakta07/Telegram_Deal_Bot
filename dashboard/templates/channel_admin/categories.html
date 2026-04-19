@@ -1,0 +1,178 @@
+{% extends 'channel_admin/base.html' %}
+{% block title %}Categories{% endblock %}
+{% block page_title %}Categories{% endblock %}
+{% block page_subtitle %}Keyword groups the bot uses to find deals for your channel{% endblock %}
+
+{% block content %}
+<div class="p-7 space-y-6 fade-up">
+
+  <!-- ── Add Category Form ──────────────────────────────────────────────── -->
+  <div class="rounded-2xl glass border border-edge p-6">
+    <h2 class="font-display font-bold text-white mb-5 flex items-center gap-2">
+      <span class="material-symbols-outlined text-cyan-400 text-[20px]">add_circle</span>
+      Add New Category
+    </h2>
+    <form method="POST" action="{{ url_for('channel_admin.add_category', slug=slug) }}"
+          class="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+      <div>
+        <label class="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">Category Name</label>
+        <input name="name" placeholder="e.g. Smartphones"
+               class="w-full bg-dark border border-edge rounded-xl px-4 py-2.5 text-sm text-white
+                      placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-colors" required>
+      </div>
+
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">
+          Keywords
+          <span class="text-slate-600 normal-case ml-1">(comma separated)</span>
+        </label>
+        <input name="keywords" placeholder="iphone, samsung, oneplus, redmi"
+               class="w-full bg-dark border border-edge rounded-xl px-4 py-2.5 text-sm text-white
+                      placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-colors" required>
+      </div>
+
+      <div>
+        <label class="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">Min Discount %</label>
+        <div class="flex gap-2">
+          <input name="min_discount" type="number" min="1" max="99" value="40" placeholder="40"
+                 class="flex-1 bg-dark border border-edge rounded-xl px-4 py-2.5 text-sm text-white
+                        focus:outline-none focus:border-cyan-500 transition-colors" required>
+          <button type="submit"
+                  class="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-sm
+                         font-semibold transition-colors flex items-center gap-1 flex-shrink-0">
+            <span class="material-symbols-outlined text-[18px]">add</span>
+            Add
+          </button>
+        </div>
+      </div>
+
+    </form>
+  </div>
+
+  <!-- ── Categories List ────────────────────────────────────────────────── -->
+  <div class="rounded-2xl glass border border-edge overflow-hidden">
+    <div class="px-6 py-4 border-b border-edge flex items-center justify-between">
+      <h2 class="font-display font-bold text-white">
+        My Categories
+        <span class="text-slate-500 font-normal text-sm ml-2">({{ categories|length }})</span>
+      </h2>
+    </div>
+
+    {% if categories %}
+    <div class="divide-y divide-edge/50">
+      {% for cat in categories %}
+      <div class="px-6 py-4" id="cat-row-{{ cat.id }}">
+
+        <!-- View mode -->
+        <div id="view-{{ cat.id }}" class="flex items-start gap-4">
+          <div class="size-9 rounded-xl bg-cyan-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <span class="material-symbols-outlined text-cyan-400 text-[17px]">category</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1.5">
+              <p class="font-semibold text-white">{{ cat.name }}</p>
+              <span class="text-xs text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded-full font-medium">
+                Min {{ cat.min_discount }}% off
+              </span>
+            </div>
+            <!-- Keyword pills -->
+            <div class="flex flex-wrap gap-1.5">
+              {% for kw in cat.keywords.split(',') %}
+              <span class="text-[11px] bg-edge text-slate-300 px-2.5 py-0.5 rounded-full font-mono border border-edge">
+                {{ kw.strip() }}
+              </span>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <button onclick="showEdit({{ cat.id }})"
+                    class="text-xs px-3 py-1.5 rounded-lg bg-slate-700 text-slate-300
+                           hover:bg-slate-600 transition-colors flex items-center gap-1">
+              <span class="material-symbols-outlined text-[14px]">edit</span>
+              Edit
+            </button>
+            <form method="POST" action="{{ url_for('channel_admin.delete_category', slug=slug) }}"
+                  onsubmit="return confirm('Delete {{ cat.name }}?')">
+              <input type="hidden" name="cat_id" value="{{ cat.id }}">
+              <button type="submit"
+                      class="text-xs px-3 py-1.5 rounded-lg bg-red-950 text-red-400
+                             hover:bg-red-900 transition-colors flex items-center gap-1">
+                <span class="material-symbols-outlined text-[14px]">delete</span>
+                Delete
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Edit mode (hidden by default) -->
+        <div id="edit-{{ cat.id }}" class="hidden">
+          <form method="POST" action="{{ url_for('channel_admin.edit_category', slug=slug) }}"
+                class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <input type="hidden" name="cat_id" value="{{ cat.id }}">
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Name</label>
+              <input name="name" value="{{ cat.name }}" required
+                     class="w-full bg-dark border border-edge rounded-xl px-3 py-2 text-sm text-white
+                            focus:outline-none focus:border-cyan-500 transition-colors">
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-xs text-slate-500 mb-1">Keywords (comma separated)</label>
+              <input name="keywords" value="{{ cat.keywords }}" required
+                     class="w-full bg-dark border border-edge rounded-xl px-3 py-2 text-sm text-white
+                            focus:outline-none focus:border-cyan-500 transition-colors">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Min Discount %</label>
+              <div class="flex gap-2">
+                <input name="min_discount" type="number" min="1" max="99"
+                       value="{{ cat.min_discount }}"
+                       class="flex-1 bg-dark border border-edge rounded-xl px-3 py-2 text-sm text-white
+                              focus:outline-none focus:border-cyan-500 transition-colors">
+                <button type="submit"
+                        class="px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white
+                               text-xs font-semibold transition-colors">Save</button>
+                <button type="button" onclick="hideEdit({{ cat.id }})"
+                        class="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300
+                               text-xs transition-colors">Cancel</button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+      </div>
+      {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="py-14 text-center text-slate-600">
+      <span class="material-symbols-outlined text-5xl block mb-3 opacity-40">category</span>
+      <p class="text-sm">No categories yet.</p>
+      <p class="text-xs mt-1">Add your first category above to start hunting deals.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Info box ───────────────────────────────────────────────────────── -->
+  <div class="rounded-2xl border border-cyan-900/40 bg-cyan-950/15 p-5 flex gap-3">
+    <span class="material-symbols-outlined text-cyan-400 flex-shrink-0 text-[20px]">info</span>
+    <div class="text-sm text-slate-400">
+      <p class="font-semibold text-cyan-300 mb-1">How categories work</p>
+      <p>The bot will search Flipkart for deals matching your keywords and only post them if the
+      discount is at least the minimum % you set. Add more specific keywords to get more targeted deals.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function showEdit(id) {
+    document.getElementById('view-' + id).classList.add('hidden');
+    document.getElementById('edit-' + id).classList.remove('hidden');
+  }
+  function hideEdit(id) {
+    document.getElementById('edit-' + id).classList.add('hidden');
+    document.getElementById('view-' + id).classList.remove('hidden');
+  }
+</script>
+{% endblock %}

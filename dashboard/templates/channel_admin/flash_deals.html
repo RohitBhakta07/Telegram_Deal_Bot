@@ -1,0 +1,175 @@
+{% extends 'channel_admin/base.html' %}
+{% block title %}Flash Deals{% endblock %}
+{% block page_title %}Flash Deals{% endblock %}
+{% block page_subtitle %}Sniper targets — bot checks these every 3 minutes for mega price drops{% endblock %}
+
+{% block content %}
+<div class="p-7 space-y-6 fade-up">
+
+  <!-- ── How it works banner ────────────────────────────────────────────── -->
+  <div class="rounded-2xl bg-gradient-to-r from-violet-900/40 to-purple-900/20
+              border border-violet-800/40 p-5 flex items-start gap-4">
+    <div class="size-10 rounded-xl bg-violet-500/20 flex items-center justify-center flex-shrink-0">
+      <span class="material-symbols-outlined text-violet-400 text-[22px]">electric_bolt</span>
+    </div>
+    <div>
+      <p class="font-display font-bold text-white text-sm mb-1">How Flash Deals work</p>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        The bot checks your sniper targets every 3 minutes. When a product drops below your
+        minimum discount, it sends an urgent alert to your channel immediately.
+        Each keyword is locked for <span class="text-violet-300 font-semibold">24 hours</span> after posting to prevent spam.
+      </p>
+    </div>
+  </div>
+
+  <!-- ── Add Flash Keyword ──────────────────────────────────────────────── -->
+  <div class="rounded-2xl glass border border-edge p-6">
+    <h2 class="font-display font-bold text-white mb-5 flex items-center gap-2">
+      <span class="material-symbols-outlined text-violet-400 text-[20px]">add_circle</span>
+      Add Sniper Target
+    </h2>
+    <form method="POST" action="{{ url_for('channel_admin.add_flash_keyword', slug=slug) }}"
+          class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">
+          Product / Keyword
+        </label>
+        <input name="keyword" placeholder="e.g. iphone 15, macbook air, nike shoes"
+               class="w-full bg-dark border border-edge rounded-xl px-4 py-2.5 text-sm text-white
+                      placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
+               required>
+      </div>
+
+      <div>
+        <label class="block text-xs text-slate-500 uppercase tracking-widest mb-1.5">Min Discount %</label>
+        <div class="flex gap-2">
+          <input name="min_discount" type="number" min="1" max="99" value="60" placeholder="60"
+                 class="flex-1 bg-dark border border-edge rounded-xl px-4 py-2.5 text-sm text-white
+                        focus:outline-none focus:border-violet-500 transition-colors" required>
+          <button type="submit"
+                  class="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm
+                         font-semibold transition-colors flex items-center gap-1 flex-shrink-0">
+            <span class="material-symbols-outlined text-[18px]">my_location</span>
+            Target
+          </button>
+        </div>
+      </div>
+
+    </form>
+  </div>
+
+  <!-- ── Reference Table ───────────────────────────────────────────────── -->
+  <details class="rounded-2xl glass border border-edge overflow-hidden group">
+    <summary class="px-6 py-4 flex items-center justify-between cursor-pointer select-none
+                    hover:bg-edge/30 transition-colors">
+      <h2 class="font-display font-bold text-white flex items-center gap-2">
+        <span class="material-symbols-outlined text-amber-400 text-[18px]">lightbulb</span>
+        Recommended Targets (click to expand)
+      </h2>
+      <span class="material-symbols-outlined text-slate-500 text-[20px] group-open:rotate-180
+                   transition-transform">expand_more</span>
+    </summary>
+    <div class="border-t border-edge overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="border-b border-edge text-left">
+            <th class="px-6 py-2.5 text-slate-500 font-semibold uppercase tracking-wider">Category</th>
+            <th class="px-4 py-2.5 text-slate-500 font-semibold uppercase tracking-wider">Keyword</th>
+            <th class="px-4 py-2.5 text-slate-500 font-semibold uppercase tracking-wider">Min % (Suggested)</th>
+            <th class="px-4 py-2.5 text-slate-500 font-semibold uppercase tracking-wider">Why</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-edge/40">
+          {% set tips = [
+            ('Premium Phones',   'iphone 15',          '25%', 'Even small drops = huge savings'),
+            ('Premium Phones',   'samsung s24',        '30%', 'High demand, fast moving'),
+            ('Laptops',          'macbook air m1',     '35%', 'Rare drops but big value'),
+            ('Laptops',          'gaming laptop rtx',  '40%', 'Frequent sale events'),
+            ('Audio',            'sony tws earbuds',   '55%', 'Often discounted on Flipkart'),
+            ('Audio',            'boat airdopes',      '75%', 'Heavy discounts are common'),
+            ('Fashion',          'nike running shoes', '65%', 'Sale seasons = big drops'),
+            ('Fashion',          'levis jeans',        '75%', 'Casual buys, huge demand'),
+            ('Smart Home',       'smart tv 43 inch 4k','55%', 'Festive sale staple'),
+            ('Gaming',           'ps5 console',        '15%', 'Any drop is viral news'),
+          ] %}
+          {% for cat, kw, pct, why in tips %}
+          <tr class="hover:bg-edge/30 transition-colors">
+            <td class="px-6 py-2.5 text-slate-500">{{ cat }}</td>
+            <td class="px-4 py-2.5 font-mono text-violet-300">{{ kw }}</td>
+            <td class="px-4 py-2.5 text-amber-400 font-bold">{{ pct }}</td>
+            <td class="px-4 py-2.5 text-slate-500">{{ why }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <!-- ── Active Flash Keywords ──────────────────────────────────────────── -->
+  <div class="rounded-2xl glass border border-edge overflow-hidden">
+    <div class="px-6 py-4 border-b border-edge flex items-center justify-between">
+      <h2 class="font-display font-bold text-white flex items-center gap-2">
+        <span class="material-symbols-outlined text-violet-400 text-[18px]">my_location</span>
+        Active Targets
+        <span class="text-slate-500 font-normal text-sm">({{ keywords|length }})</span>
+      </h2>
+    </div>
+
+    {% if keywords %}
+    <div class="divide-y divide-edge/50">
+      {% for kw in keywords %}
+      <div class="px-6 py-4 flex items-center gap-4">
+
+        <!-- Icon -->
+        <div class="size-9 rounded-xl bg-violet-500/10 flex items-center justify-center flex-shrink-0">
+          <span class="material-symbols-outlined text-violet-400 text-[17px]">electric_bolt</span>
+        </div>
+
+        <!-- Keyword info -->
+        <div class="flex-1 min-w-0">
+          <p class="font-mono font-semibold text-white">{{ kw.keyword }}</p>
+          <p class="text-xs text-slate-500 mt-0.5">Added {{ kw.created_at[:10] if kw.created_at else '' }}</p>
+        </div>
+
+        <!-- Discount badge -->
+        <div class="flex items-center gap-3">
+          <div class="text-center">
+            <p class="font-display font-extrabold text-violet-400 text-xl leading-none">{{ kw.min_discount }}%</p>
+            <p class="text-[10px] text-slate-600 uppercase tracking-wide">min drop</p>
+          </div>
+
+          <!-- 24h lock indicator (visual only) -->
+          <div class="flex items-center gap-1.5 text-[10px] text-emerald-400
+                      bg-emerald-400/10 px-2.5 py-1.5 rounded-full">
+            <span class="material-symbols-outlined text-[12px]">radar</span>
+            Scanning
+          </div>
+
+          <!-- Delete -->
+          <form method="POST" action="{{ url_for('channel_admin.delete_flash_keyword', slug=slug) }}"
+                onsubmit="return confirm('Remove {{ kw.keyword }} from sniper list?')">
+            <input type="hidden" name="kw_id" value="{{ kw.id }}">
+            <button type="submit"
+                    class="size-8 rounded-lg bg-red-950 text-red-400 hover:bg-red-900
+                           transition-colors flex items-center justify-center">
+              <span class="material-symbols-outlined text-[16px]">delete</span>
+            </button>
+          </form>
+        </div>
+
+      </div>
+      {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="py-14 text-center text-slate-600">
+      <span class="material-symbols-outlined text-5xl block mb-3 opacity-40">electric_bolt</span>
+      <p class="text-sm">No flash targets set yet.</p>
+      <p class="text-xs mt-1">Add a product keyword above to start scanning for mega deals.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
