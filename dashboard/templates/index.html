@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard Overview{% endblock %}
+
+{% block content %}
+<section
+    class="bg-white dark:bg-[#162128] rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-lg transition-all">
+    <div class="flex flex-col md:flex-row items-center justify-between gap-2">
+
+        <div class="flex items-center gap-2">
+            <div class="relative">
+                <span
+                    class="material-symbols-outlined text-4xl {{ 'text-emerald-500' if bot_status == 'ON' else 'text-slate-400' }}">
+                    {{ 'smart_toy' if bot_status == 'ON' else 'robot_2' }}
+                </span>
+                <span class="absolute top-0 right-0 flex h-2 w-2">
+                    <span
+                        class="animate-ping absolute inline-flex h-full w-full rounded-full {{ 'bg-emerald-400' if bot_status == 'ON' else 'bg-rose-400' }} opacity-75"></span>
+                    <span
+                        class="relative inline-flex rounded-full h-2 w-2 {{ 'bg-emerald-500' if bot_status == 'ON' else 'bg-rose-500' }}"></span>
+                </span>
+            </div>
+            <div>
+                <h3 class="text-xl font-extrabold text-slate-900 dark:text-white">Bot Engine</h3>
+                <p class="text-sm font-medium text-slate-500">
+                    Current Status:
+                    <span
+                        class="{{ 'text-emerald-500' if bot_status == 'ON' else 'text-rose-500' }} uppercase tracking-wider">
+                        ● {{ bot_status }}
+                    </span>
+                </p>
+            </div>
+        </div>
+
+        <form action="/toggle_bot" method="POST" class="w-full md:w-auto">
+            <button type="submit"
+                class="w-full md:w-50 flex items-center justify-center gap-2 py-3 px-6 rounded-2xl font-bold text-lg transition-all active:scale-95 shadow-xl
+                {{ 'bg-rose-500/10 text-rose-500 border-2 border-rose-500/20 hover:bg-rose-500 hover:text-white shadow-rose-500/20' if bot_status == 'ON' 
+                   else 'bg-emerald-500/10 text-emerald-500 border-2 border-emerald-500/20 hover:bg-emerald-500 hover:text-white shadow-emerald-500/20' }}">
+
+                <span class="material-symbols-outlined">
+                    {{ 'power_settings_new' if bot_status == 'ON' else 'bolt' }}
+                </span>
+                {{ 'SHUTDOWN BOT' if bot_status == 'ON' else 'WAKE UP BOT' }}
+            </button>
+        </form>
+    </div>
+
+    <div class="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <div class="flex items-center gap-2 text-xs font-mono text-slate-400">
+            <span class="flex h-2 w-2 rounded-full bg-slate-400"></span>
+            <span>System check: {{ 'Engine running smooth' if bot_status == 'ON' else 'Engine standby mode' }}</span>
+        </div>
+    </div>
+</section>
+<div class="max-w-7xl mx-auto p-8 w-full">
+    <p class="text-slate-500 dark:text-slate-400 mb-8 mt-[-15px]">Real-time performance metrics and system status</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+        <div
+            class="relative group overflow-hidden rounded-xl p-6 text-white bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-700 shadow-xl">
+            <div class="relative z-10">
+                <p class="text-sky-100 text-sm font-medium uppercase tracking-wider mb-1">System Mode</p>
+                <h3 class="text-3xl font-black">Online</h3>
+            </div>
+            <span
+                class="material-symbols-outlined absolute -right-4 -bottom-4 text-9xl opacity-20 rotate-12 group-hover:rotate-0 transition-transform duration-500">send</span>
+        </div>
+        <div
+            class="relative group overflow-hidden rounded-xl p-6 text-white bg-gradient-to-br from-purple-500 via-purple-600 to-fuchsia-700 shadow-xl">
+            <div class="relative z-10">
+                <p class="text-purple-100 text-sm font-medium uppercase tracking-wider mb-1">Bot Engine</p>
+                <h3 class="text-3xl font-black">Active</h3>
+            </div>
+            <span
+                class="material-symbols-outlined absolute -right-4 -bottom-4 text-9xl opacity-20 rotate-12 group-hover:rotate-0 transition-transform duration-500">grid_view</span>
+        </div>
+        <div
+            class="relative group overflow-hidden rounded-xl p-6 text-white bg-gradient-to-br from-amber-400 via-orange-500 to-red-600 shadow-xl">
+            <div class="relative z-10">
+                <p class="text-orange-100 text-sm font-medium uppercase tracking-wider mb-1">Affiliate Linker</p>
+                <h3 class="text-3xl font-black">ExtraPe</h3>
+            </div>
+            <span
+                class="material-symbols-outlined absolute -right-4 -bottom-4 text-9xl opacity-20 rotate-12 group-hover:rotate-0 transition-transform duration-500">share</span>
+        </div>
+        <div
+            class="relative group overflow-hidden rounded-xl p-6 text-white bg-gradient-to-br from-teal-400 via-emerald-500 to-green-600 shadow-xl">
+            <div class="relative z-10">
+                <p class="text-emerald-100 text-sm font-medium uppercase tracking-wider mb-1">System Status</p>
+                <h3 class="text-3xl font-black">Operational</h3>
+                <div class="mt-4 flex items-center gap-2 bg-white/20 w-fit px-2 py-1 rounded-md">
+                    <span class="material-symbols-outlined text-sm">speed</span>
+                    <span class="text-sm font-bold">100% Uptime</span>
+                </div>
+            </div>
+            <span
+                class="material-symbols-outlined absolute -right-4 -bottom-4 text-9xl opacity-20 rotate-12 group-hover:rotate-0 transition-transform duration-500">sensors</span>
+        </div>
+    </div>
+
+    <div class="glass-panel rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+        <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">Monitoring</h3>
+            <a href="/live_console" class="text-sm font-semibold text-primary hover:underline flex items-center gap-1">
+                View Live Console <span class="material-symbols-outlined text-sm">arrow_forward</span>
+            </a>
+        </div>
+        <div class="overflow-x-auto p-8 text-center text-slate-400 font-medium">
+            <p>Deals are actively being processed in the background.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

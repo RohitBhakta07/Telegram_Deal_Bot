@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block title %}Live Terminal Console{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-hidden p-8 flex flex-col h-full">
+    <div class="max-w-6xl mx-auto w-full h-full flex flex-col gap-6">
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 flex-shrink-0">
+            <div
+                class="bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-slate-500 font-bold uppercase">CPU Usage</p>
+                    <h4 class="text-2xl font-black text-slate-900 dark:text-white mt-1" id="cpu-stat">--%</h4>
+                </div>
+                <div class="h-10 w-10 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center">
+                    <span class="material-symbols-outlined">memory</span>
+                </div>
+            </div>
+            <div
+                class="bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-slate-500 font-bold uppercase">RAM Usage</p>
+                    <h4 class="text-2xl font-black text-slate-900 dark:text-white mt-1" id="mem-stat">-- MB</h4>
+                </div>
+                <div class="h-10 w-10 rounded-full bg-purple-500/10 text-purple-500 flex items-center justify-center">
+                    <span class="material-symbols-outlined">storage</span>
+                </div>
+            </div>
+            <div
+                class="bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex gap-2">
+                <button onclick="restartBot()"
+                    class="flex-1 bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white border border-amber-500/20 font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-sm">restart_alt</span> Restart
+                </button>
+                <button onclick="clearLogs()"
+                    class="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-500 font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-sm">delete</span> Clear
+                </button>
+                <a href="/export_logs"
+                    class="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-primary font-bold rounded-lg transition-all flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-sm">download</span> Save
+                </a>
+            </div>
+        </div>
+
+        <div
+            class="flex-1 bg-[#0a0f12] rounded-xl border border-slate-800 overflow-hidden relative shadow-2xl flex flex-col">
+            <div class="bg-[#162128] border-b border-slate-800 p-3 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="flex gap-1.5">
+                        <div class="h-3 w-3 rounded-full bg-red-500"></div>
+                        <div class="h-3 w-3 rounded-full bg-amber-500"></div>
+                        <div class="h-3 w-3 rounded-full bg-green-500"></div>
+                    </div>
+                    <span class="text-xs font-mono text-slate-500">bot.log — running</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="relative flex h-2 w-2">
+                        <span
+                            class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    <span class="text-[10px] font-bold text-green-500 tracking-wider">LIVE</span>
+                </div>
+            </div>
+
+            <div class="flex-1 p-4 overflow-y-auto font-mono text-sm" id="terminal-body">
+                <pre id="log-content" class="text-green-400 whitespace-pre-wrap leading-relaxed">Loading logs...</pre>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    const terminalBody = document.getElementById('terminal-body');
+    const logContent = document.getElementById('log-content');
+
+    // Auto-scroll logic
+    let isUserScrolling = false;
+    terminalBody.addEventListener('scroll', () => {
+        const isAtBottom = terminalBody.scrollHeight - terminalBody.scrollTop <= terminalBody.clientHeight + 10;
+        isUserScrolling = !isAtBottom;
+    });
+
+    function fetchLogs() {
+        fetch('/get_logs')
+            .then(response => response.text())
+            .then(data => {
+                logContent.innerHTML = data;
+                if (!isUserScrolling) {
+                    terminalBody.scrollTop = terminalBody.scrollHeight;
+                }
+            });
+    }
+
+    function fetchStats() {
+        fetch('/system_stats')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('cpu-stat').innerText = data.cpu + '%';
+                document.getElementById('mem-stat').innerText = data.mem + ' MB';
+            });
+    }
+
+    function restartBot() {
+        fetch('/restart_bot', { method: 'POST' })
+            .then(() => alert("Restart signal sent! Check logs."));
+    }
+
+    function clearLogs() {
+        fetch('/clear_logs', { method: 'POST' })
+            .then(() => logContent.innerHTML = "Logs cleared.");
+    }
+
+    // Refresh every 2 seconds
+    setInterval(fetchLogs, 2000);
+    setInterval(fetchStats, 3000);
+    fetchLogs();
+    fetchStats();
+</script>
+{% endblock %}

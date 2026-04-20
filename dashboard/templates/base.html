@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Deal Hunter Bot - Admin Panel</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#0da2e7",
+                        "background-light": "#f5f7f8",
+                        "background-dark": "#101c22",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        .gradient-accent {
+            background: linear-gradient(135deg, #0da2e7 0%, #a855f7 50%, #f97316 100%);
+        }
+
+        .gradient-accent-hover:hover {
+            filter: brightness(1.1);
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+    </style>
+</head>
+
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 min-h-screen">
+    <div class="flex h-screen overflow-hidden">
+        <aside
+            class="w-64 flex-shrink-0 flex flex-col bg-slate-100 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
+            <div class="p-6 flex flex-col h-full">
+                <div class="flex items-center gap-3 mb-10">
+                    <div
+                        class="size-10 rounded-xl gradient-accent flex items-center justify-center text-white shadow-lg shadow-primary/20">
+                        <span class="material-symbols-outlined">smart_toy</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <h1 class="text-slate-900 dark:text-white text-base font-bold leading-none">Deal Hunter Bot</h1>
+                        <p class="text-slate-500 dark:text-slate-400 text-xs font-medium mt-1">Admin Panel</p>
+                    </div>
+                </div>
+                <nav class="flex-1 space-y-1">
+                    <a href="/"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                        <span class="material-symbols-outlined text-[22px]">dashboard</span>
+                        <span class="text-sm font-semibold">Dashboard</span>
+                    </a>
+                    <a href="/channels"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                        <span class="material-symbols-outlined text-[22px]">broadcast_on_home</span>
+                        <span class="text-sm font-semibold">Channels</span>
+                    </a>
+                    <a href="/categories"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                        <span class="material-symbols-outlined text-[22px]">memory</span>
+                        <span class="text-sm font-semibold">Categories</span>
+                    </a>
+                    <a href="/flash_deals"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                        <span class="material-symbols-outlined text-[22px] text-red-500">electric_bolt</span>
+                        <span class="text-sm font-semibold">Flash Deals</span>
+                    </a>
+                    <a href="/live_console"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                        <span class="material-symbols-outlined text-[22px]">terminal</span>
+                        <span class="text-sm font-semibold">Live Console</span>
+                    </a>
+                    <a href="/settings"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                        <span class="material-symbols-outlined text-[22px]">settings</span>
+                        <span class="text-sm font-semibold">Settings</span>
+                    </a>
+                </nav>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col overflow-y-auto">
+            <header
+                class="flex items-center justify-between px-8 py-4 bg-white/50 dark:bg-background-dark/50 backdrop-blur-md sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
+                <div class="flex items-center gap-4">
+                    <h2 class="text-xl font-bold text-slate-900 dark:text-white">{% block title %}{% endblock %}</h2>
+                </div>
+                <div class="flex items-center gap-6">
+                    <div class="flex items-center gap-3">
+                        <div class="flex flex-col items-end">
+                            <span class="text-sm font-bold text-slate-900 dark:text-white leading-none">Admin
+                                User</span>
+                            <span class="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Super
+                                Admin</span>
+                        </div>
+                        <img alt="Admin Avatar" class="size-10 rounded-full border-2 border-primary/20 p-0.5"
+                            src="https://ui-avatars.com/api/?name=Admin+User&background=0da2e7&color=fff">
+                    </div>
+                </div>
+            </header>
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+
+</html>

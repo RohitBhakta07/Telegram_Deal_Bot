@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}Channel Management{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto p-8">
+    <div class="max-w-6xl mx-auto space-y-8">
+        <section
+            class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-xl shadow-black/5">
+            <div class="flex items-center gap-2 mb-6">
+                <span class="material-symbols-outlined text-primary">add_link</span>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">Add Telegram Channel</h3>
+            </div>
+
+            <form action="/add_channel" method="POST">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-400">Channel Username / ID</label>
+                        <input name="channel_id" required
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none"
+                            placeholder="e.g. @my_deal_channel or -10012345678" type="text">
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-400">Channel Display Name</label>
+                        <input name="channel_name" required
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none"
+                            placeholder="e.g. Loot Deals Official" type="text">
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="submit"
+                        class="gradient-accent text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2">
+                        <span class="material-symbols-outlined">add</span>
+                        Link Channel
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <section class="space-y-6">
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">Active Channels</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% if channels %}
+                {% for channel in channels %}
+                <div
+                    class="bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 relative group">
+                    <h4 class="text-lg font-bold text-slate-900 dark:text-white">{{ channel[1] }}</h4>
+                    <p class="text-sm text-primary mt-1">{{ channel[0] }}</p>
+                    <div class="mt-4 flex gap-2">
+                        <a href="/delete_channel/{{ channel[0] }}"
+                            class="bg-red-500/10 text-red-500 px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-red-500 hover:text-white transition-all">
+                            Unlink Channel
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="col-span-full text-center text-slate-500 p-8 glass-panel rounded-xl">
+                    Koi bhi channel add nahi kiya gaya hai.
+                </div>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

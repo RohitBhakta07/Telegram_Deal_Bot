@@ -1,0 +1,176 @@
+{% extends 'base.html' %}
+
+{% block title %}Flash Loot Sniper{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto p-8">
+    <div class="max-w-6xl mx-auto space-y-8">
+
+        <section
+            class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.1)] relative overflow-hidden">
+            <div class="absolute -top-24 -right-24 w-64 h-64 bg-red-500/10 rounded-full blur-3xl pointer-events-none">
+            </div>
+
+            <div class="flex items-center gap-2 mb-6">
+                <span class="material-symbols-outlined text-red-500 animate-pulse">electric_bolt</span>
+                <div>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Add Mega Loot Keyword</h3>
+                    <p class="text-xs text-slate-500 mt-1">Sniper bot har 3 minute mein in items ko check karega.</p>
+                </div>
+            </div>
+
+            <form action="/add_flash" method="POST">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-400">Premium Keyword</label>
+                        <input name="keyword" required
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 ring-red-500/30 transition-all outline-none"
+                            placeholder="e.g. iphone 15, macbook air, sony tws" type="text">
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-400">Mega Discount Alert (%)</label>
+                        <div class="relative">
+                            <input name="min_discount" required
+                                class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 ring-red-500/30 outline-none font-bold text-red-500"
+                                type="number" value="70">
+                            <span class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%
+                                OFF</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end">
+                    <button type="submit"
+                        class="bg-gradient-to-r from-red-600 to-orange-500 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 hover:scale-[1.02] hover:shadow-lg hover:shadow-red-500/30 active:scale-95 transition-all">
+                        <span class="material-symbols-outlined">radar</span>
+                        Arm Sniper Bot
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <section class="space-y-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-red-500">my_location</span>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Active Sniper Targets</h3>
+                </div>
+                <span
+                    class="bg-red-500/10 text-red-500 border border-red-500/20 px-3 py-1 rounded-full text-xs font-bold">
+                    {{ flash_keywords|length }} TARGETS LOCKED
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                {% if flash_keywords %}
+                {% for item in flash_keywords %}
+                <div
+                    class="bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 hover:border-red-500/50 hover:shadow-lg hover:shadow-red-500/10 transition-all group relative">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="flex items-center gap-3">
+                            <div
+                                class="h-10 w-10 rounded-full bg-slate-100 dark:bg-[#1b2327] flex items-center justify-center text-slate-500 group-hover:text-red-500 transition-colors">
+                                <span class="material-symbols-outlined text-[20px]">target</span>
+                            </div>
+                            <div>
+                                <h4
+                                    class="text-lg font-bold text-slate-900 dark:text-white capitalize truncate max-w-[150px]">
+                                    {{ item[1] }}</h4>
+                            </div>
+                        </div>
+                        <div class="bg-red-500 text-white text-[10px] font-black px-2 py-1 rounded-md shadow-sm">
+                            MIN {{ item[2] }}% DROP
+                        </div>
+                    </div>
+
+                    <div
+                        class="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800 mt-2">
+                        <div class="flex items-center gap-2 text-slate-400">
+                            <span class="relative flex h-2 w-2">
+                                <span
+                                    class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                            </span>
+                            <span class="text-[11px] font-semibold tracking-wider">SCANNING LIVE</span>
+                        </div>
+                        <div class="flex gap-1">
+                            <button onclick="openEditFlashModal('{{ item[0] }}', '{{ item[1] }}', '{{ item[2] }}')"
+                                class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
+                                title="Edit Target">
+                                <span class="material-symbols-outlined text-[18px]">edit</span>
+                            </button>
+                            <a href="/delete_flash/{{ item[0] }}"
+                                class="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                                title="Remove Target">
+                                <span class="material-symbols-outlined text-[18px]">delete</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div
+                    class="col-span-1 md:col-span-2 lg:col-span-3 py-16 text-center text-slate-500 glass-panel border-dashed border-2 border-slate-700 rounded-2xl">
+                    <span class="material-symbols-outlined text-4xl mb-2 opacity-50">radar</span>
+                    <p>No active sniper targets. Add a premium keyword to arm the bot.</p>
+                </div>
+                {% endif %}
+
+            </div>
+        </section>
+    </div>
+</div>
+
+<div id="editFlashModal"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div
+        class="bg-white dark:bg-[#162128] w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+        <div
+            class="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-[#1b2327]">
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span class="material-symbols-outlined text-red-500">tune</span> Edit Target
+            </h3>
+            <button onclick="closeEditFlashModal()" class="text-slate-400 hover:text-red-500 transition-colors">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <form id="editFlashForm" method="POST" class="p-6 space-y-6">
+            <div class="space-y-4">
+                <div class="flex flex-col gap-2">
+                    <label class="text-sm font-semibold text-slate-400">Target Keyword</label>
+                    <input type="text" name="keyword" id="edit_flash_keyword" required
+                        class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none focus:ring-2 ring-red-500/30">
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label class="text-sm font-semibold text-slate-400">Min Discount Alert (%)</label>
+                    <input type="number" name="min_discount" id="edit_flash_discount" required
+                        class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none focus:ring-2 ring-red-500/30 font-bold text-red-500">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button type="button" onclick="closeEditFlashModal()"
+                    class="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all">Cancel</button>
+                <button type="submit"
+                    class="bg-gradient-to-r from-red-600 to-orange-500 px-6 py-2.5 rounded-xl text-white font-bold shadow-lg shadow-red-500/20 hover:scale-[1.02] transition-all">
+                    Update Target
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openEditFlashModal(id, keyword, discount) {
+        document.getElementById('editFlashModal').classList.remove('hidden');
+        document.getElementById('editFlashForm').action = '/edit_flash/' + id;
+        document.getElementById('edit_flash_keyword').value = keyword;
+        document.getElementById('edit_flash_discount').value = discount;
+    }
+
+    function closeEditFlashModal() {
+        document.getElementById('editFlashModal').classList.add('hidden');
+    }
+</script>
+{% endblock %}

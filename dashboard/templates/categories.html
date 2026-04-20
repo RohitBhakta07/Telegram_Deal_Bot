@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+
+{% block title %}Categories & Keywords{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto p-8">
+    <div class="max-w-6xl mx-auto space-y-8">
+
+        <section
+            class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-xl shadow-black/5">
+            <div class="flex items-center gap-2 mb-6">
+                <span class="material-symbols-outlined text-primary">add_box</span>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">Add New Category</h3>
+            </div>
+
+            <form action="/add_category" method="POST">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <div class="flex flex-col gap-2">
+                            <label class="text-sm font-semibold text-slate-400">Category Name</label>
+                            <input name="name" required
+                                class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 ring-primary/30 transition-all outline-none"
+                                placeholder="e.g. Mechanical Keyboards" type="text">
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="text-sm font-semibold text-slate-400">Minimum Discount (%)</label>
+                            <div class="relative">
+                                <input name="min_discount" required
+                                    class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 ring-primary/30 outline-none"
+                                    type="number" value="20">
+                                <span
+                                    class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-400">Target Keywords (Comma separated)</label>
+                        <textarea name="keywords" required
+                            class="flex-1 min-h-[120px] bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 ring-primary/30 outline-none resize-none"
+                            placeholder="Custom, RGB, Hot-swappable, Cherry MX, Keycaps..."></textarea>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="submit"
+                        class="gradient-accent text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 hover:scale-[1.02] active:scale-95 transition-all">
+                        <span class="material-symbols-outlined">save</span>
+                        Save Category Configuration
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <section class="space-y-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-primary">list_alt</span>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Active Tracked Categories</h3>
+                </div>
+                <span class="bg-slate-200 dark:bg-slate-800 text-slate-500 px-3 py-1 rounded-full text-xs font-bold">{{
+                    categories|length }} ACTIVE</span>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+                {% if categories %}
+                {% for cat in categories %}
+                <div
+                    class="bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 hover:border-primary/50 transition-colors group relative">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h4
+                                class="text-lg font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors">
+                                {{ cat[1] }}</h4>
+                            <p class="text-xs text-slate-500">Live monitoring active</p>
+                        </div>
+                        <div class="gradient-accent text-white text-xs font-black px-3 py-1.5 rounded-lg">
+                            MIN {{ cat[3] }}% OFF
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        {% for keyword in cat[2].split(',') %}
+                        <span
+                            class="bg-primary/10 text-primary px-2.5 py-1 rounded-md text-[11px] font-bold border border-primary/20">
+                            {{ keyword.strip() }}
+                        </span>
+                        {% endfor %}
+                    </div>
+
+                    <div class="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
+                        <div class="flex items-center gap-2 text-slate-400">
+                            <span class="material-symbols-outlined text-[18px]">query_stats</span>
+                            <span class="text-xs">Tracking live deals</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                onclick="openEditModal('{{ cat[0] }}', '{{ cat[1] }}', '{{ cat[2] }}', '{{ cat[3] }}')"
+                                class="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
+                                title="Edit Category">
+                                <span class="material-symbols-outlined text-[20px]">edit</span>
+                            </button>
+                            <a href="/delete_category/{{ cat[0] }}"
+                                class="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                                title="Delete Category">
+                                <span class="material-symbols-outlined text-[20px]">delete</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="col-span-2 py-12 text-center text-slate-500 glass-panel rounded-2xl">
+                    Abhi tak koi category add nahi ki gayi hai.
+                </div>
+                {% endif %}
+
+            </div>
+        </section>
+    </div>
+</div>
+
+<div id="editModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div
+        class="bg-white dark:bg-[#162128] w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+        <div class="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white">Edit Category</h3>
+            <button onclick="closeEditModal()" class="text-slate-400 hover:text-red-500 transition-colors">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <form id="editForm" method="POST" class="p-6 space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="space-y-4">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-400">Category Name</label>
+                        <input type="text" name="name" id="edit_name" required
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none focus:ring-2 ring-primary/30">
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-400">Min Discount (%)</label>
+                        <input type="number" name="min_discount" id="edit_discount" required
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none focus:ring-2 ring-primary/30">
+                    </div>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label class="text-sm font-semibold text-slate-400">Keywords (Comma separated)</label>
+                    <textarea name="keywords" id="edit_keywords" required
+                        class="flex-1 min-h-[120px] bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none focus:ring-2 ring-primary/30 resize-none"></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 pt-4">
+                <button type="button" onclick="closeEditModal()"
+                    class="px-6 py-3 rounded-xl border border-slate-200 dark:border-slate-700 font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all">Cancel</button>
+                <button type="submit"
+                    class="gradient-accent px-8 py-3 rounded-xl text-white font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all">Update
+                    Configuration</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openEditModal(id, name, keywords, discount) {
+        document.getElementById('editModal').classList.remove('hidden');
+        document.getElementById('editForm').action = '/edit_category/' + id;
+        document.getElementById('edit_name').value = name;
+        document.getElementById('edit_keywords').value = keywords;
+        document.getElementById('edit_discount').value = discount;
+    }
+
+    function closeEditModal() {
+        document.getElementById('editModal').classList.add('hidden');
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}System Settings{% endblock %}
+
+{% block content %}
+<div class="flex-1 overflow-y-auto p-8">
+    <div class="max-w-4xl mx-auto space-y-8">
+
+        <form action="/save_settings" method="POST" class="space-y-8">
+
+            <section
+                class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+                <div class="flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <span class="material-symbols-outlined text-primary">api</span>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Telegram API Configuration</h3>
+                </div>
+                <div class="space-y-5">
+                    <div>
+                        <label class="text-sm font-semibold text-slate-500 mb-2 block">Bot Token</label>
+                        <input name="bot_token" value="{{ bot_token }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none"
+                            type="text" placeholder="123456789:ABCDEF...">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                            <label class="text-sm font-semibold text-slate-500 mb-2 block">API ID</label>
+                            <input name="api_id" value="{{ api_id }}"
+                                class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none"
+                                type="text">
+                        </div>
+                        <div>
+                            <label class="text-sm font-semibold text-slate-500 mb-2 block">API HASH</label>
+                            <input name="api_hash" value="{{ api_hash }}"
+                                class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none"
+                                type="password">
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section
+                class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+                <div class="flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <span class="material-symbols-outlined text-orange-500">payments</span>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">ExtraPe Affiliate Settings</h3>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                        <label class="text-sm font-semibold text-slate-500 mb-2 block">Affiliate ID (affid)</label>
+                        <input name="extrape_affid" value="{{ extrape_affid }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none focus:border-orange-500"
+                            type="text">
+                    </div>
+                    <div>
+                        <label class="text-sm font-semibold text-slate-500 mb-2 block">Sub ID (affExtParam1)</label>
+                        <input name="extrape_param1" value="{{ extrape_param1 }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none focus:border-orange-500"
+                            type="text">
+                    </div>
+                </div>
+            </section>
+
+            <section
+                class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
+                <div class="flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <span class="material-symbols-outlined text-emerald-500">speed</span>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Bot Speed & Timing Controls</h3>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Delay Between Posts (Seconds)</label>
+                        <p class="text-xs text-slate-400 mb-1">Anti-ban delay after sending a deal.</p>
+                        <input name="delay_post" value="{{ delay_post }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-emerald-500 outline-none"
+                            type="number" min="1">
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Retry Delay (Seconds)</label>
+                        <p class="text-xs text-slate-400 mb-1">Wait time if a deal is not found.</p>
+                        <input name="delay_retry" value="{{ delay_retry }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-emerald-500 outline-none"
+                            type="number" min="1">
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Flash Check Interval (Minutes)</label>
+                        <p class="text-xs text-slate-400 mb-1">How often the Ninja sniper wakes up.</p>
+                        <input name="flash_interval" value="{{ flash_interval }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-emerald-500 outline-none"
+                            type="number" min="1">
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Short Break (Minutes)</label>
+                        <p class="text-xs text-slate-400 mb-1">Sleep time after normal deal rounds.</p>
+                        <input name="round_wait" value="{{ round_wait }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-emerald-500 outline-none"
+                            type="number" min="1">
+                    </div>
+
+                    <div class="flex flex-col gap-2 md:col-span-2">
+                        <label class="text-sm font-semibold text-slate-500">Long Sleep Cycle (Minutes)</label>
+                        <p class="text-xs text-slate-400 mb-1">Big break after 4 complete rounds to avoid detection.</p>
+                        <input name="long_sleep" value="{{ long_sleep }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-emerald-500 outline-none"
+                            type="number" min="10">
+                    </div>
+                </div>
+            </section>
+
+            <div class="flex justify-end pt-4">
+                <button type="submit"
+                    class="gradient-accent text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all">
+                    <span class="material-symbols-outlined">save</span>
+                    Save All Settings
+                </button>
+            </div>
+        </form>
+
+    </div>
+</div>
+{% endblock %}
