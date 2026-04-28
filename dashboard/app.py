@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session
+from functools import wraps
 import sys
 import os
 import psutil
@@ -12,8 +13,64 @@ sys.path.append(parent_dir)
 from database import db_manager
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24).hex())
+app.permanent_session_lifetime = __import__('datetime').timedelta(minutes=30)
+
+# 🔒 LOGIN REQUIRED DECORATOR — har protected route ke upar lagega
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# 🔒 LOGIN / LOGOUT ROUTES
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if session.get('logged_in'):
+        return redirect(url_for('index'))
+    
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        
+        if db_manager.verify_admin(username, password):
+            session.permanent = True
+            session['logged_in'] = True
+            session['username'] = username
+            print(f"🔒 Admin Login: {username}")
+            return redirect(url_for('index'))
+        else:
+            error = "❌ Wrong Username ya Password!"
+    
+    return render_template('login.html', error=error)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/change_password', methods=['POST'])
+@login_required
+def change_password():
+    old_pass = request.form.get('old_password', '')
+    new_pass = request.form.get('new_password', '')
+    
+    username = session.get('username', 'admin')
+    
+    if not db_manager.verify_admin(username, old_pass):
+        return jsonify({"status": "error", "message": "❌ Old Password Wrong!"})
+    
+    if len(new_pass) < 4:
+        return jsonify({"status": "error", "message": "❌ new password at least 4 characters !"})
+    
+    db_manager.update_admin_password(username, new_pass)
+    return jsonify({"status": "success", "message": "✅ Password change successfully!"})
 
 @app.route('/')
+@login_required
 def index():
     status = db_manager.get_setting('bot_status', 'ON')
     total_deals = db_manager.get_total_deals_count()
@@ -31,6 +88,7 @@ def index():
 
 # 2. Settings Page
 @app.route('/settings')
+@login_required
 def settings():
     api_id = db_manager.get_setting('API_ID', '')
     api_hash = db_manager.get_setting('API_HASH', '')
@@ -54,6 +112,7 @@ def settings():
                            keywords_per_round=keywords_per_round)
 
 @app.route('/save_settings', methods=['POST'])
+@login_required
 def save_settings():
     if request.method == 'POST':
         db_manager.update_setting('API_ID', request.form.get('api_id'))
@@ -74,11 +133,13 @@ def save_settings():
 
 # 3. Channels Page 
 @app.route('/channels')
+@login_required
 def channels():
     all_channels = db_manager.get_all_channels()
     return render_template('channels.html', channels=all_channels)
 
 @app.route('/add_channel', methods=['POST'])
+@login_required
 def add_channel():
     channel_id = request.form.get('channel_id')
     channel_name = request.form.get('channel_name')
@@ -87,6 +148,7 @@ def add_channel():
     return redirect(url_for('channels'))
 
 @app.route('/delete_channel/<channel_id>')
+@login_required
 def delete_channel(channel_id):
     db_manager.delete_channel(channel_id)
     return redirect(url_for('channels'))
@@ -95,11 +157,13 @@ def delete_channel(channel_id):
 # 4. CATEGORIES MANAGEMENT 
 # ==========================================
 @app.route('/categories')
+@login_required
 def categories():
     all_categories = db_manager.get_all_categories()
     return render_template('categories.html', categories=all_categories)
 
 @app.route('/add_category', methods=['POST'])
+@login_required
 def add_category():
     name = request.form.get('name')
     keywords = request.form.get('keywords') 
@@ -110,11 +174,13 @@ def add_category():
     return redirect(url_for('categories'))
 
 @app.route('/delete_category/<cat_id>')
+@login_required
 def delete_category(cat_id):
     db_manager.delete_category(cat_id)
     return redirect(url_for('categories'))
 
 @app.route('/edit_category/<int:cat_id>', methods=['POST'])
+@login_required
 def edit_category(cat_id):
     name = request.form.get('name')
     keywords = request.form.get('keywords')
@@ -128,11 +194,13 @@ def edit_category(cat_id):
 # ⚡ 5. FLASH LOOT SNIPER MANAGEMENT
 # ==========================================
 @app.route('/flash_deals')
+@login_required
 def flash_deals():
     all_flash_keywords = db_manager.get_all_flash_keywords()
     return render_template('flash_deals.html', flash_keywords=all_flash_keywords)
 
 @app.route('/add_flash', methods=['POST'])
+@login_required
 def add_flash():
     keyword = request.form.get('keyword')
     min_discount = request.form.get('min_discount')
@@ -142,11 +210,13 @@ def add_flash():
     return redirect(url_for('flash_deals'))
 
 @app.route('/delete_flash/<int:keyword_id>')
+@login_required
 def delete_flash(keyword_id):
     db_manager.delete_flash_keyword(keyword_id)
     return redirect(url_for('flash_deals'))
 
 @app.route('/edit_flash/<int:keyword_id>', methods=['POST'])
+@login_required
 def edit_flash(keyword_id):
     keyword = request.form.get('keyword')
     min_discount = request.form.get('min_discount')
@@ -159,10 +229,12 @@ def edit_flash(keyword_id):
 # 🚀 6. INSTANT POST (Link Paste → Turant Post)
 # ==========================================
 @app.route('/instant_post')
+@login_required
 def instant_post():
     return render_template('instant_post.html')
 
 @app.route('/instant_post_send', methods=['POST'])
+@login_required
 def instant_post_send():
     """
     Background thread mein product scrape + affiliate generate + Telegram post karega.
@@ -284,10 +356,12 @@ def instant_post_send():
 # 📺 LIVE TERMINAL CONSOLE
 # ==========================================
 @app.route('/live_console')
+@login_required
 def live_console():
     return render_template('console.html')
 
 @app.route('/get_logs')
+@login_required
 def get_logs():
     log_file_path = os.path.join(parent_dir, 'bot.log')
     
@@ -302,6 +376,7 @@ def get_logs():
         return f"Error reading logs: {str(e)}"
 
 @app.route('/system_stats')
+@login_required
 def system_stats():
     cpu = psutil.cpu_percent(interval=0.1)
     mem = psutil.virtual_memory()
@@ -309,6 +384,7 @@ def system_stats():
     return jsonify({'cpu': cpu, 'mem': mem_used_mb})
 
 @app.route('/export_logs')
+@login_required
 def export_logs():
     log_file_path = os.path.join(parent_dir, 'bot.log')
     if os.path.exists(log_file_path):
@@ -316,6 +392,7 @@ def export_logs():
     return "Log file abhi tak bani nahi hai.", 404
 
 @app.route('/restart_bot', methods=['POST'])
+@login_required
 def restart_bot():
     log_file_path = os.path.join(parent_dir, 'bot.log')
     with open(log_file_path, 'a', encoding='utf-8') as f:
@@ -323,12 +400,14 @@ def restart_bot():
     return jsonify({"status": "success"})
 
 @app.route('/clear_logs', methods=['POST'])
+@login_required
 def clear_logs():
     log_file_path = os.path.join(parent_dir, 'bot.log')
     open(log_file_path, 'w').close()
     return jsonify({"status": "success"})
 
 @app.route('/toggle_bot', methods=['POST'])
+@login_required
 def toggle_bot():
     current = db_manager.get_setting('bot_status', 'ON')
     new_status = 'OFF' if current == 'ON' else 'ON'

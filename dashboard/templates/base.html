@@ -107,13 +107,16 @@
                 <div class="flex items-center gap-6">
                     <div class="flex items-center gap-3">
                         <div class="flex flex-col items-end">
-                            <span class="text-sm font-bold text-slate-900 dark:text-white leading-none">Admin
-                                User</span>
+                            <span class="text-sm font-bold text-slate-900 dark:text-white leading-none">{{ session.get('username', 'Admin') }}</span>
                             <span class="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Super
                                 Admin</span>
                         </div>
                         <img alt="Admin Avatar" class="size-10 rounded-full border-2 border-primary/20 p-0.5"
-                            src="https://ui-avatars.com/api/?name=Admin+User&background=0da2e7&color=fff">
+                            src="https://ui-avatars.com/api/?name={{ session.get('username', 'Admin') }}&background=0da2e7&color=fff">
+                        <a href="/logout" title="Logout"
+                            class="p-2 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors">
+                            <span class="material-symbols-outlined text-xl">logout</span>
+                        </a>
                     </div>
                 </div>
             </header>

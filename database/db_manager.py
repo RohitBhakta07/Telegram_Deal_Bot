@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import time
+import hashlib
 
 # Database file path setup
 DB_PATH = os.path.join(os.path.dirname(__file__), 'bot_data.db')
@@ -17,6 +18,10 @@ def _get_connection(retries=3):
                 time.sleep(1)
             else:
                 raise e
+
+def _hash_password(password):
+    """SHA-256 se password hash karo"""
+    return hashlib.sha256(password.encode()).hexdigest()
 
 def init_db():
     conn = _get_connection()
@@ -69,9 +74,63 @@ def init_db():
             min_discount INTEGER NOT NULL
         )
     ''')
+    
+    # 6. 🔒 Admin Users Table (Dashboard Login)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS admin_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL
+        )
+    ''')
+    
+    # Default admin create karo agar nahi hai
+    cursor.execute("SELECT COUNT(*) FROM admin_users")
+    if cursor.fetchone()[0] == 0:
+        default_hash = _hash_password("admin123")
+        cursor.execute("INSERT INTO admin_users (username, password_hash) VALUES (?, ?)", 
+                       ("admin", default_hash))
+        print("🔒 Default admin created → Username: admin | Password: admin123")
 
     conn.commit()
     conn.close()
+
+# --- 🔒 AUTH FUNCTIONS ---
+def verify_admin(username, password):
+    """Login check — returns True if credentials match"""
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT password_hash FROM admin_users WHERE username=?", (username,))
+        result = cursor.fetchone()
+        if result and result[0] == _hash_password(password):
+            return True
+        return False
+    finally:
+        conn.close()
+
+def update_admin_password(username, new_password):
+    """Password change / reset"""
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE admin_users SET password_hash=? WHERE username=?", 
+                       (_hash_password(new_password), username))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+def get_admin_username():
+    """Dashboard par dikhane ke liye current admin username"""
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT username FROM admin_users LIMIT 1")
+        result = cursor.fetchone()
+        return result[0] if result else "admin"
+    finally:
+        conn.close()
 
 # --- CATEGORIES FUNCTIONS ---
 def add_category(name, keywords, min_discount):

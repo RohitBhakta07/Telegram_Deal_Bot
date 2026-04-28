@@ -126,6 +126,77 @@
             </div>
         </form>
 
+        <!-- 🔒 Security Settings (Change Password) -->
+        <section class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm mt-8">
+            <div class="flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+                <span class="material-symbols-outlined text-rose-500">lock_reset</span>
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white">Security & Password</h3>
+            </div>
+            
+            <form id="password-form" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                    <label class="text-sm font-semibold text-slate-500 mb-2 block">Old Password</label>
+                    <input name="old_password" id="old_password" required
+                        class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none focus:border-rose-500"
+                        type="password" placeholder="Enter current password">
+                </div>
+                <div>
+                    <label class="text-sm font-semibold text-slate-500 mb-2 block">New Password</label>
+                    <input name="new_password" id="new_password" required minlength="4"
+                        class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none focus:border-rose-500"
+                        type="password" placeholder="Enter new password">
+                </div>
+                
+                <div class="md:col-span-2 flex justify-end mt-2">
+                    <button type="submit"
+                        class="bg-rose-500 hover:bg-rose-600 text-white font-bold py-2.5 px-6 rounded-xl flex items-center gap-2 shadow-lg shadow-rose-500/20 transition-all">
+                        <span class="material-symbols-outlined text-sm">key</span>
+                        Update Password
+                    </button>
+                </div>
+            </form>
+            
+            <div id="password-msg" class="hidden mt-4 p-3 rounded-xl text-sm font-medium"></div>
+        </section>
+
     </div>
 </div>
+
+<script>
+document.getElementById('password-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const oldPass = document.getElementById('old_password').value;
+    const newPass = document.getElementById('new_password').value;
+    const msgBox = document.getElementById('password-msg');
+    
+    const formData = new FormData();
+    formData.append('old_password', oldPass);
+    formData.append('new_password', newPass);
+    
+    try {
+        const response = await fetch('/change_password', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        msgBox.classList.remove('hidden', 'bg-emerald-500/10', 'text-emerald-500', 'bg-rose-500/10', 'text-rose-500');
+        
+        if (data.status === 'success') {
+            msgBox.classList.add('bg-emerald-500/10', 'text-emerald-500');
+            msgBox.innerHTML = `<span class="material-symbols-outlined align-middle mr-1 text-sm">check_circle</span> ${data.message}`;
+            this.reset();
+        } else {
+            msgBox.classList.add('bg-rose-500/10', 'text-rose-500');
+            msgBox.innerHTML = `<span class="material-symbols-outlined align-middle mr-1 text-sm">error</span> ${data.message}`;
+        }
+    } catch (err) {
+        msgBox.classList.remove('hidden');
+        msgBox.classList.add('bg-rose-500/10', 'text-rose-500');
+        msgBox.innerText = 'Network error occurred!';
+    }
+});
+</script>
 {% endblock %}

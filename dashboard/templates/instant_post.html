@@ -12,7 +12,7 @@
                 <span class="material-symbols-outlined text-violet-500">rocket_launch</span>
                 <div>
                     <h3 class="text-xl font-bold text-slate-900 dark:text-white">Instant Post</h3>
-                    <p class="text-xs text-slate-400 mt-1">Koi bhi Flipkart link paste karo → Turant affiliate link ke saath sabhi channels par post ho jayega</p>
+                    <p class="text-xs text-slate-400 mt-1">paste any link here and post</p>
                 </div>
             </div>
 
@@ -31,7 +31,7 @@
                         <span class="material-symbols-outlined">rocket_launch</span>
                         Post Now 🚀
                     </button>
-                    
+
                     <div id="statusMsg" class="text-sm font-semibold hidden"></div>
                 </div>
             </div>
@@ -42,35 +42,34 @@
             class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
             <div class="flex items-center gap-2 mb-4">
                 <span class="material-symbols-outlined text-amber-500">info</span>
-                <h3 class="text-lg font-bold text-slate-900 dark:text-white">Kaise Kaam Karta Hai?</h3>
+                <h3 class="text-lg font-bold text-slate-900 dark:text-white">How it is work ?</h3>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div class="flex flex-col items-center text-center p-4 rounded-xl bg-slate-50 dark:bg-[#1b2327]">
                     <span class="material-symbols-outlined text-3xl text-violet-500 mb-2">content_paste</span>
                     <span class="text-sm font-bold text-slate-700 dark:text-white">Step 1</span>
-                    <span class="text-xs text-slate-400 mt-1">Flipkart link paste karo</span>
+                    <span class="text-xs text-slate-400 mt-1">Paste Flipkart Product link</span>
                 </div>
                 <div class="flex flex-col items-center text-center p-4 rounded-xl bg-slate-50 dark:bg-[#1b2327]">
                     <span class="material-symbols-outlined text-3xl text-blue-500 mb-2">search</span>
                     <span class="text-sm font-bold text-slate-700 dark:text-white">Step 2</span>
-                    <span class="text-xs text-slate-400 mt-1">Bot product details scrape karega</span>
+                    <span class="text-xs text-slate-400 mt-1">Bot scrape product details</span>
                 </div>
                 <div class="flex flex-col items-center text-center p-4 rounded-xl bg-slate-50 dark:bg-[#1b2327]">
                     <span class="material-symbols-outlined text-3xl text-orange-500 mb-2">link</span>
                     <span class="text-sm font-bold text-slate-700 dark:text-white">Step 3</span>
-                    <span class="text-xs text-slate-400 mt-1">Affiliate link generate hoga</span>
+                    <span class="text-xs text-slate-400 mt-1">Affiliate link generate </span>
                 </div>
                 <div class="flex flex-col items-center text-center p-4 rounded-xl bg-slate-50 dark:bg-[#1b2327]">
                     <span class="material-symbols-outlined text-3xl text-emerald-500 mb-2">send</span>
                     <span class="text-sm font-bold text-slate-700 dark:text-white">Step 4</span>
-                    <span class="text-xs text-slate-400 mt-1">Sabhi channels par post! ✅</span>
+                    <span class="text-xs text-slate-400 mt-1">Post all channels</span>
                 </div>
             </div>
         </section>
 
         <!-- TIPS -->
-        <section
-            class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-amber-500/20 shadow-sm">
+        <section class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-amber-500/20 shadow-sm">
             <div class="flex items-center gap-2 mb-3">
                 <span class="material-symbols-outlined text-amber-400">tips_and_updates</span>
                 <h3 class="text-lg font-bold text-slate-900 dark:text-white">Tips</h3>
@@ -90,7 +89,8 @@
                 </li>
                 <li class="flex items-start gap-2">
                     <span class="text-amber-400 mt-0.5">⚠</span>
-                    <span>Product page dhang se load hona chahiye — out of stock ya broken links se details nahi milegi</span>
+                    <span>Product page dhang se load hona chahiye — out of stock ya broken links se details nahi
+                        milegi</span>
                 </li>
             </ul>
         </section>
@@ -99,53 +99,53 @@
 </div>
 
 <script>
-function sendInstantPost() {
-    const url = document.getElementById('product_url').value.trim();
-    const btn = document.getElementById('postBtn');
-    const msg = document.getElementById('statusMsg');
-    
-    if (!url) {
-        msg.className = 'text-sm font-semibold text-red-500';
-        msg.textContent = '❌ Link paste karo pehle!';
-        msg.classList.remove('hidden');
-        return;
-    }
-    
-    // Loading state
-    btn.disabled = true;
-    btn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span> Processing...';
-    btn.style.opacity = '0.6';
-    msg.className = 'text-sm font-semibold text-amber-400';
-    msg.textContent = '⏳ Scraping & posting... 10-15 sec lagenge...';
-    msg.classList.remove('hidden');
-    
-    fetch('/instant_post_send', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'product_url=' + encodeURIComponent(url)
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.status === 'success') {
-            msg.className = 'text-sm font-semibold text-emerald-400';
-            msg.textContent = data.message;
-            document.getElementById('product_url').value = '';
-        } else {
+    function sendInstantPost() {
+        const url = document.getElementById('product_url').value.trim();
+        const btn = document.getElementById('postBtn');
+        const msg = document.getElementById('statusMsg');
+
+        if (!url) {
             msg.className = 'text-sm font-semibold text-red-500';
-            msg.textContent = data.message;
+            msg.textContent = '❌ Link paste karo pehle!';
+            msg.classList.remove('hidden');
+            return;
         }
-        btn.disabled = false;
-        btn.innerHTML = '<span class="material-symbols-outlined">rocket_launch</span> Post Now 🚀';
-        btn.style.opacity = '1';
-    })
-    .catch(err => {
-        msg.className = 'text-sm font-semibold text-red-500';
-        msg.textContent = '❌ Network Error: ' + err;
+
+        // Loading state
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span> Processing...';
+        btn.style.opacity = '0.6';
+        msg.className = 'text-sm font-semibold text-amber-400';
+        msg.textContent = '⏳ Scraping & posting... 10-15 sec lagenge...';
         msg.classList.remove('hidden');
-        btn.disabled = false;
-        btn.innerHTML = '<span class="material-symbols-outlined">rocket_launch</span> Post Now 🚀';
-        btn.style.opacity = '1';
-    });
-}
+
+        fetch('/instant_post_send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'product_url=' + encodeURIComponent(url)
+        })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    msg.className = 'text-sm font-semibold text-emerald-400';
+                    msg.textContent = data.message;
+                    document.getElementById('product_url').value = '';
+                } else {
+                    msg.className = 'text-sm font-semibold text-red-500';
+                    msg.textContent = data.message;
+                }
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined">rocket_launch</span> Post Now 🚀';
+                btn.style.opacity = '1';
+            })
+            .catch(err => {
+                msg.className = 'text-sm font-semibold text-red-500';
+                msg.textContent = '❌ Network Error: ' + err;
+                msg.classList.remove('hidden');
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined">rocket_launch</span> Post Now 🚀';
+                btn.style.opacity = '1';
+            });
+    }
 </script>
 {% endblock %}

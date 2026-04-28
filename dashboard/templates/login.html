@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Deal Hunter Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL@24,400,0"
+        rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .login-bg {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+            min-height: 100vh;
+        }
+
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .glow-btn {
+            background: linear-gradient(135deg, #8b5cf6, #6366f1);
+            box-shadow: 0 0 30px rgba(139, 92, 246, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .glow-btn:hover {
+            box-shadow: 0 0 40px rgba(139, 92, 246, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .input-field {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            transition: all 0.3s ease;
+        }
+
+        .input-field:focus {
+            border-color: #8b5cf6;
+            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+            outline: none;
+        }
+    </style>
+</head>
+
+<body class="login-bg flex items-center justify-center p-4">
+
+    <div class="w-full max-w-md">
+        <!-- Logo & Title -->
+        <div class="text-center mb-8">
+            <div
+                class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-xl mb-4">
+                <span class="material-symbols-outlined text-white text-3xl">smart_toy</span>
+            </div>
+            <h1 class="text-2xl font-black text-white">Deal Hunter Bot</h1>
+            <p class="text-slate-400 text-sm mt-1">Admin Panel Login</p>
+        </div>
+
+        <!-- Login Card -->
+        <div class="glass-card rounded-2xl p-8">
+            {% if error %}
+            <div
+                class="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm font-medium flex items-center gap-2">
+                <span class="material-symbols-outlined text-lg">error</span>
+                {{ error }}
+            </div>
+            {% endif %}
+
+            {% if success %}
+            <div
+                class="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-medium flex items-center gap-2">
+                <span class="material-symbols-outlined text-lg">check_circle</span>
+                {{ success }}
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/login">
+                <div class="mb-5">
+                    <label class="block text-sm font-semibold text-slate-300 mb-2">Username</label>
+                    <div class="relative">
+                        <span
+                            class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">person</span>
+                        <input type="text" name="username" required autocomplete="username"
+                            class="input-field w-full pl-10 pr-4 py-3 rounded-xl text-white placeholder-slate-500"
+                            placeholder="Enter username">
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-sm font-semibold text-slate-300 mb-2">Password</label>
+                    <div class="relative">
+                        <span
+                            class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">lock</span>
+                        <input type="password" name="password" required autocomplete="current-password"
+                            class="input-field w-full pl-10 pr-4 py-3 rounded-xl text-white placeholder-slate-500"
+                            placeholder="Enter password">
+                    </div>
+                </div>
+
+                <button type="submit"
+                    class="glow-btn w-full py-3 rounded-xl text-white font-bold text-lg flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined">login</span>
+                    Login
+                </button>
+            </form>
+
+            <div class="mt-6 pt-4 border-t border-slate-700/50 text-center">
+                <p class="text-slate-500 text-xs">
+                    🔒 forget your password ?.
+                </p>
+            </div>
+        </div>
+
+        <p class="text-center text-slate-600 text-xs mt-6">🔒 Secured with encryption</p>
+    </div>
+</body>
+
+</html>
