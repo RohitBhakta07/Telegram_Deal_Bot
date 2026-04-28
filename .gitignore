@@ -1,0 +1,24 @@
+# Deal Hunter Bot - .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.env
+
+# Sensitive Data (NEVER PUSH)
+database/bot_data.db
+userbot/extrape_session.session
+userbot/extrape_session.session-journal
+bot.log
+*.session
+*.session-journal
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

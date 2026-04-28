@@ -2,6 +2,7 @@
 {% block title %}Dashboard Overview{% endblock %}
 
 {% block content %}
+<!-- 🤖 BOT STATUS BAR -->
 <section
     class="bg-white dark:bg-[#162128] rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-lg transition-all">
     <div class="flex flex-col md:flex-row items-center justify-between gap-2">
@@ -44,70 +45,161 @@
             </button>
         </form>
     </div>
-
-    <div class="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-        <div class="flex items-center gap-2 text-xs font-mono text-slate-400">
-            <span class="flex h-2 w-2 rounded-full bg-slate-400"></span>
-            <span>System check: {{ 'Engine running smooth' if bot_status == 'ON' else 'Engine standby mode' }}</span>
-        </div>
-    </div>
 </section>
-<div class="max-w-7xl mx-auto p-8 w-full">
-    <p class="text-slate-500 dark:text-slate-400 mb-8 mt-[-15px]">Real-time performance metrics and system status</p>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        <div
-            class="relative group overflow-hidden rounded-xl p-6 text-white bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-700 shadow-xl">
-            <div class="relative z-10">
-                <p class="text-sky-100 text-sm font-medium uppercase tracking-wider mb-1">System Mode</p>
-                <h3 class="text-3xl font-black">Online</h3>
-            </div>
-            <span
-                class="material-symbols-outlined absolute -right-4 -bottom-4 text-9xl opacity-20 rotate-12 group-hover:rotate-0 transition-transform duration-500">send</span>
+<!-- 📊 STATS CARDS -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+    <!-- Total Deals -->
+    <div class="relative group overflow-hidden rounded-xl p-5 text-white bg-gradient-to-br from-violet-500 via-purple-600 to-indigo-700 shadow-xl">
+        <div class="relative z-10">
+            <p class="text-purple-100 text-xs font-medium uppercase tracking-wider mb-1">Total Deals</p>
+            <h3 class="text-3xl font-black">{{ total_deals }}</h3>
+            <p class="text-purple-200 text-xs mt-1">All time posted</p>
         </div>
-        <div
-            class="relative group overflow-hidden rounded-xl p-6 text-white bg-gradient-to-br from-purple-500 via-purple-600 to-fuchsia-700 shadow-xl">
-            <div class="relative z-10">
-                <p class="text-purple-100 text-sm font-medium uppercase tracking-wider mb-1">Bot Engine</p>
-                <h3 class="text-3xl font-black">Active</h3>
-            </div>
-            <span
-                class="material-symbols-outlined absolute -right-4 -bottom-4 text-9xl opacity-20 rotate-12 group-hover:rotate-0 transition-transform duration-500">grid_view</span>
-        </div>
-        <div
-            class="relative group overflow-hidden rounded-xl p-6 text-white bg-gradient-to-br from-amber-400 via-orange-500 to-red-600 shadow-xl">
-            <div class="relative z-10">
-                <p class="text-orange-100 text-sm font-medium uppercase tracking-wider mb-1">Affiliate Linker</p>
-                <h3 class="text-3xl font-black">ExtraPe</h3>
-            </div>
-            <span
-                class="material-symbols-outlined absolute -right-4 -bottom-4 text-9xl opacity-20 rotate-12 group-hover:rotate-0 transition-transform duration-500">share</span>
-        </div>
-        <div
-            class="relative group overflow-hidden rounded-xl p-6 text-white bg-gradient-to-br from-teal-400 via-emerald-500 to-green-600 shadow-xl">
-            <div class="relative z-10">
-                <p class="text-emerald-100 text-sm font-medium uppercase tracking-wider mb-1">System Status</p>
-                <h3 class="text-3xl font-black">Operational</h3>
-                <div class="mt-4 flex items-center gap-2 bg-white/20 w-fit px-2 py-1 rounded-md">
-                    <span class="material-symbols-outlined text-sm">speed</span>
-                    <span class="text-sm font-bold">100% Uptime</span>
-                </div>
-            </div>
-            <span
-                class="material-symbols-outlined absolute -right-4 -bottom-4 text-9xl opacity-20 rotate-12 group-hover:rotate-0 transition-transform duration-500">sensors</span>
-        </div>
+        <span class="material-symbols-outlined absolute -right-3 -bottom-3 text-8xl opacity-15 rotate-12 group-hover:rotate-0 transition-transform duration-500">local_fire_department</span>
     </div>
+    
+    <!-- Today's Deals -->
+    <div class="relative group overflow-hidden rounded-xl p-5 text-white bg-gradient-to-br from-emerald-400 via-green-500 to-teal-600 shadow-xl">
+        <div class="relative z-10">
+            <p class="text-emerald-100 text-xs font-medium uppercase tracking-wider mb-1">Today's Deals</p>
+            <h3 class="text-3xl font-black">{{ today_deals }}</h3>
+            <p class="text-emerald-200 text-xs mt-1">Posted today</p>
+        </div>
+        <span class="material-symbols-outlined absolute -right-3 -bottom-3 text-8xl opacity-15 rotate-12 group-hover:rotate-0 transition-transform duration-500">today</span>
+    </div>
+    
+    <!-- Active Channels -->
+    <div class="relative group overflow-hidden rounded-xl p-5 text-white bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-600 shadow-xl">
+        <div class="relative z-10">
+            <p class="text-sky-100 text-xs font-medium uppercase tracking-wider mb-1">Channels</p>
+            <h3 class="text-3xl font-black">{{ channels_count }}</h3>
+            <p class="text-sky-200 text-xs mt-1">Active targets</p>
+        </div>
+        <span class="material-symbols-outlined absolute -right-3 -bottom-3 text-8xl opacity-15 rotate-12 group-hover:rotate-0 transition-transform duration-500">campaign</span>
+    </div>
+    
+    <!-- Categories -->
+    <div class="relative group overflow-hidden rounded-xl p-5 text-white bg-gradient-to-br from-amber-400 via-orange-500 to-red-500 shadow-xl">
+        <div class="relative z-10">
+            <p class="text-orange-100 text-xs font-medium uppercase tracking-wider mb-1">Categories</p>
+            <h3 class="text-3xl font-black">{{ categories_count }}</h3>
+            <p class="text-orange-200 text-xs mt-1">Keyword groups</p>
+        </div>
+        <span class="material-symbols-outlined absolute -right-3 -bottom-3 text-8xl opacity-15 rotate-12 group-hover:rotate-0 transition-transform duration-500">category</span>
+    </div>
+</div>
 
-    <div class="glass-panel rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-        <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <h3 class="text-xl font-bold text-slate-900 dark:text-white">Monitoring</h3>
-            <a href="/live_console" class="text-sm font-semibold text-primary hover:underline flex items-center gap-1">
-                View Live Console <span class="material-symbols-outlined text-sm">arrow_forward</span>
-            </a>
+<!-- 📋 RECENT DEALS TABLE -->
+<div class="mt-6 bg-white dark:bg-[#162128] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-lg overflow-hidden">
+    <div class="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-violet-500">history</span>
+            <h3 class="text-lg font-bold text-slate-900 dark:text-white">Recent Deals</h3>
+            <span class="text-xs bg-violet-500/10 text-violet-500 px-2 py-0.5 rounded-full font-bold">Last {{ recent_deals|length }}</span>
         </div>
-        <div class="overflow-x-auto p-8 text-center text-slate-400 font-medium">
-            <p>Deals are actively being processed in the background.</p>
-        </div>
+        <a href="/live_console" class="text-sm font-semibold text-violet-500 hover:underline flex items-center gap-1">
+            Live Console <span class="material-symbols-outlined text-sm">arrow_forward</span>
+        </a>
     </div>
+    
+    {% if recent_deals %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-slate-50 dark:bg-[#1b2327] text-left">
+                    <th class="px-5 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">#</th>
+                    <th class="px-5 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Product</th>
+                    <th class="px-5 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Category</th>
+                    <th class="px-5 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Time</th>
+                    <th class="px-5 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider">Link</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                {% for deal in recent_deals %}
+                <tr class="hover:bg-slate-50/50 dark:hover:bg-[#1b2327]/50 transition-colors">
+                    <td class="px-5 py-3">
+                        <span class="text-xs font-mono text-slate-400">#{{ deal[0] }}</span>
+                    </td>
+                    <td class="px-5 py-3">
+                        <div class="max-w-xs">
+                            <p class="font-semibold text-slate-800 dark:text-slate-200 truncate" title="{{ deal[1] }}">{{ deal[1][:55] }}{% if deal[1]|length > 55 %}...{% endif %}</p>
+                        </div>
+                    </td>
+                    <td class="px-5 py-3">
+                        {% if deal[3] == 'INSTANT POST' %}
+                        <span class="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-fuchsia-500/10 text-fuchsia-500">
+                            🚀 Instant
+                        </span>
+                        {% elif deal[3] == 'FLASH SALE' %}
+                        <span class="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-amber-500/10 text-amber-500">
+                            ⚡ Flash
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-sky-500/10 text-sky-500">
+                            🔍 {{ deal[3][:15] if deal[3] else 'General' }}
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-5 py-3">
+                        <span class="text-xs text-slate-400 font-mono">{{ deal[4][:16] if deal[4] else 'N/A' }}</span>
+                    </td>
+                    <td class="px-5 py-3">
+                        {% if deal[2] %}
+                        <a href="{{ deal[2] }}" target="_blank" class="inline-flex items-center gap-1 text-xs font-bold text-emerald-500 hover:text-emerald-400 transition-colors">
+                            <span class="material-symbols-outlined text-sm">open_in_new</span> View
+                        </a>
+                        {% else %}
+                        <span class="text-xs text-slate-400">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="p-12 text-center">
+        <span class="material-symbols-outlined text-5xl text-slate-300 dark:text-slate-600 mb-3">inbox</span>
+        <p class="text-slate-400 font-medium">Abhi tak koi deal post nahi hui.</p>
+        <p class="text-slate-400 text-sm mt-1">Bot start karo ya Instant Post se deal bhejo!</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 🔗 QUICK ACTIONS -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+    <a href="/instant_post" class="group flex items-center gap-3 p-4 rounded-xl bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 hover:border-fuchsia-500/50 transition-all shadow-sm hover:shadow-lg">
+        <div class="p-3 rounded-xl bg-fuchsia-500/10 group-hover:bg-fuchsia-500/20 transition-colors">
+            <span class="material-symbols-outlined text-fuchsia-500">rocket_launch</span>
+        </div>
+        <div>
+            <h4 class="font-bold text-slate-800 dark:text-white text-sm">Instant Post</h4>
+            <p class="text-xs text-slate-400">Paste any link → turant post</p>
+        </div>
+        <span class="material-symbols-outlined ml-auto text-slate-300 group-hover:text-fuchsia-500 transition-colors">chevron_right</span>
+    </a>
+    
+    <a href="/categories" class="group flex items-center gap-3 p-4 rounded-xl bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 hover:border-sky-500/50 transition-all shadow-sm hover:shadow-lg">
+        <div class="p-3 rounded-xl bg-sky-500/10 group-hover:bg-sky-500/20 transition-colors">
+            <span class="material-symbols-outlined text-sky-500">category</span>
+        </div>
+        <div>
+            <h4 class="font-bold text-slate-800 dark:text-white text-sm">Manage Categories</h4>
+            <p class="text-xs text-slate-400">Keywords & discount rules</p>
+        </div>
+        <span class="material-symbols-outlined ml-auto text-slate-300 group-hover:text-sky-500 transition-colors">chevron_right</span>
+    </a>
+    
+    <a href="/live_console" class="group flex items-center gap-3 p-4 rounded-xl bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 hover:border-emerald-500/50 transition-all shadow-sm hover:shadow-lg">
+        <div class="p-3 rounded-xl bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors">
+            <span class="material-symbols-outlined text-emerald-500">terminal</span>
+        </div>
+        <div>
+            <h4 class="font-bold text-slate-800 dark:text-white text-sm">Live Console</h4>
+            <p class="text-xs text-slate-400">Real-time bot logs</p>
+        </div>
+        <span class="material-symbols-outlined ml-auto text-slate-300 group-hover:text-emerald-500 transition-colors">chevron_right</span>
+    </a>
 </div>
 {% endblock %}

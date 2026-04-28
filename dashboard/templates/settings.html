@@ -99,12 +99,20 @@
                             type="number" min="1">
                     </div>
 
-                    <div class="flex flex-col gap-2 md:col-span-2">
+                    <div class="flex flex-col gap-2">
                         <label class="text-sm font-semibold text-slate-500">Long Sleep Cycle (Minutes)</label>
                         <p class="text-xs text-slate-400 mb-1">Big break after 4 complete rounds to avoid detection.</p>
                         <input name="long_sleep" value="{{ long_sleep }}"
                             class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-emerald-500 outline-none"
-                            type="number" min="10">
+                            type="number" min="1">
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Keywords Per Round</label>
+                        <p class="text-xs text-slate-400 mb-1">Ek round mein kitne keywords ek saath scrape hone chahiye (1-10). Zyada = zyada deals per round.</p>
+                        <input name="keywords_per_round" value="{{ keywords_per_round }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-violet-500 outline-none focus:border-violet-500"
+                            type="number" min="1" max="10">
                     </div>
                 </div>
             </section>

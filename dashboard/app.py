@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, s
 import sys
 import os
 import psutil
+import threading
 
 # Database file path setup
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -15,7 +16,18 @@ app = Flask(__name__)
 @app.route('/')
 def index():
     status = db_manager.get_setting('bot_status', 'ON')
-    return render_template('index.html', bot_status=status)
+    total_deals = db_manager.get_total_deals_count()
+    today_deals = db_manager.get_deals_today_count()
+    recent_deals = db_manager.get_recent_deals(15)
+    channels = db_manager.get_all_channels()
+    categories = db_manager.get_all_categories()
+    return render_template('index.html', 
+                           bot_status=status,
+                           total_deals=total_deals,
+                           today_deals=today_deals,
+                           recent_deals=recent_deals,
+                           channels_count=len(channels),
+                           categories_count=len(categories))
 
 # 2. Settings Page
 @app.route('/settings')
@@ -31,12 +43,15 @@ def settings():
     flash_interval = db_manager.get_setting('FLASH_INTERVAL', '3')
     round_wait = db_manager.get_setting('ROUND_WAIT', '15')
     long_sleep = db_manager.get_setting('LONG_SLEEP', '60')
+    # 🚀 NEW: Keywords Per Round
+    keywords_per_round = db_manager.get_setting('KEYWORDS_PER_ROUND', '1')
 
     return render_template('settings.html', 
                            api_id=api_id, api_hash=api_hash, bot_token=bot_token,
                            extrape_affid=extrape_affid, extrape_param1=extrape_param1,
                            delay_post=delay_post, delay_retry=delay_retry, 
-                           flash_interval=flash_interval, round_wait=round_wait, long_sleep=long_sleep)
+                           flash_interval=flash_interval, round_wait=round_wait, long_sleep=long_sleep,
+                           keywords_per_round=keywords_per_round)
 
 @app.route('/save_settings', methods=['POST'])
 def save_settings():
@@ -52,6 +67,8 @@ def save_settings():
         db_manager.update_setting('FLASH_INTERVAL', request.form.get('flash_interval'))
         db_manager.update_setting('ROUND_WAIT', request.form.get('round_wait'))
         db_manager.update_setting('LONG_SLEEP', request.form.get('long_sleep'))
+        # 🚀 NEW: Keywords Per Round
+        db_manager.update_setting('KEYWORDS_PER_ROUND', request.form.get('keywords_per_round'))
 
         return redirect(url_for('settings'))
 
@@ -137,6 +154,131 @@ def edit_flash(keyword_id):
     if keyword and min_discount:
         db_manager.update_flash_keyword(keyword_id, keyword.strip().lower(), int(min_discount))
     return redirect(url_for('flash_deals'))
+
+# ==========================================
+# 🚀 6. INSTANT POST (Link Paste → Turant Post)
+# ==========================================
+@app.route('/instant_post')
+def instant_post():
+    return render_template('instant_post.html')
+
+@app.route('/instant_post_send', methods=['POST'])
+def instant_post_send():
+    """
+    Background thread mein product scrape + affiliate generate + Telegram post karega.
+    Bot loop bilkul nahi rukega.
+    """
+    product_url = request.form.get('product_url', '').strip()
+    
+    if not product_url:
+        return jsonify({"status": "error", "message": "❌ Link khali hai! Flipkart ka link paste karo."})
+    
+    if 'flipkart.com' not in product_url and 'fkrt.it' not in product_url:
+        return jsonify({"status": "error", "message": "❌ Yeh Flipkart ka link nahi hai! Sirf Flipkart links paste karo."})
+    
+    def process_instant_post(url):
+        try:
+            from scraper.flipkart import scrape_single_product
+            from telegram.bot import send_telegram_message
+            
+            print(f"\n🚀 [INSTANT POST] Processing: {url[:60]}...")
+            
+            # 1. Product page scrape karo
+            deal = scrape_single_product(url)
+            
+            if not deal:
+                print("❌ [INSTANT POST] Product scrape fail hua. Link check karo.")
+                return
+            
+            # 2. Affiliate link generate karo (main.py ka proven logic copy)
+            print("🕵️‍♂️ [INSTANT POST] Affiliate link generate kar rahe hain...")
+            affiliate_link = url  # Default: original link
+            
+            # Method 1: ExtraPe Bot se try karo
+            try:
+                from userbot.extrape_agent import get_sync_link
+                agent_link = get_sync_link(url)
+                if agent_link and agent_link != url:
+                    print(f"✅ [INSTANT POST] Agent ne link convert kar diya: {agent_link[:50]}...")
+                    affiliate_link = agent_link
+                else:
+                    print("⚠️ [INSTANT POST] Agent ne same link return kiya. Backup try karunga...")
+                    raise Exception("Agent returned same link")
+            except Exception as e:
+                print(f"⚠️ [INSTANT POST] Agent error: {e}")
+                # Method 2: TinyURL Backup
+                try:
+                    from config import EXTRAPE_AFFID, EXTRAPE_PARAM1
+                    import requests as req
+                    affiliate_params = f"&&affid={EXTRAPE_AFFID}&affExtParam1={EXTRAPE_PARAM1}"
+                    final_long_url = f"{url}{affiliate_params}"
+                    api_url = f"http://tinyurl.com/api-create.php?url={final_long_url}"
+                    resp = req.get(api_url, timeout=8)
+                    if resp.status_code == 200:
+                        affiliate_link = resp.text
+                        print(f"✅ [INSTANT POST] Backup TinyURL se link ban gaya!")
+                    else:
+                        affiliate_link = final_long_url
+                        print(f"⚠️ [INSTANT POST] TinyURL fail, long affiliate link use karunga")
+                except Exception as e2:
+                    print(f"❌ [INSTANT POST] Backup bhi fail: {e2}. Original link use karunga.")
+                    affiliate_link = url
+            
+            # 3. Same format mein message banao (🔥 HOT DEAL format)
+            message = f"""🔥 <b>HOT DEAL | Verified  ✅</b>
+
+🛍️ {deal['title']}
+
+💰 <b>MRP : </b> <del>{deal['mrp']}</del>
+💸 <b>Deal Price : </b> {deal['price']}
+📉 <b>Flat {deal['discount']}</b>
+
+👉 <b>Check price on Flipkart: 👇</b> 
+{affiliate_link}
+
+⭐ <b>Rating : </b> {deal['rating']}
+📝 <b>Product Highlights:</b>
+{deal['highlights']}
+⚡ Limited time deal
+⏳ Stock fast finish hota hai!"""
+            
+            # 4. Saare channels par post karo
+            try:
+                channels = db_manager.get_all_channels()
+            except:
+                channels = []
+                
+            if not channels:
+                print("⚠️ [INSTANT POST] Koi channel add nahi hai!")
+                return
+            
+            for channel in channels:
+                try:
+                    send_telegram_message(message, image_url=deal.get('image'), chat_id=channel[0])
+                except Exception as e:
+                    print(f"❌ [INSTANT POST] Channel {channel[0]} par send fail: {e}")
+            
+            # 5. DB mein save karo
+            try:
+                db_manager.save_deal(
+                    title=deal['title'],
+                    original_link=url,
+                    affiliate_link=affiliate_link,
+                    category="INSTANT POST"
+                )
+            except:
+                pass
+                
+            print(f"✅ [INSTANT POST] Deal posted successfully: {deal['title'][:40]}...")
+            
+        except Exception as e:
+            print(f"❌ [INSTANT POST] Error: {e}")
+    
+    # Background thread mein chalao taaki bot loop na ruke
+    thread = threading.Thread(target=process_instant_post, args=(product_url,), daemon=True)
+    thread.start()
+    
+    return jsonify({"status": "success", "message": "🚀 Processing shuru ho gaya! 10-15 sec mein Telegram par post ho jayega."})
 
 # ==========================================
 # 📺 LIVE TERMINAL CONSOLE

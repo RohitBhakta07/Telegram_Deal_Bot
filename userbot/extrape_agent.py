@@ -16,12 +16,21 @@ from telethon import TelegramClient
 EXTRAPE_BOT_USERNAME = '@ExtraPeBot' 
 
 # ✅ CRITICAL HOSTING FIX: Ab session file server par hamesha ek hi jagah rahegi
-client = TelegramClient(SESSION_PATH, API_ID, API_HASH)
+try:
+    client = TelegramClient(SESSION_PATH, API_ID, API_HASH)
+except Exception as e:
+    print(f"⚠️ Telethon Client init error: {e}")
+    client = None
 
 async def get_extrape_link(original_link):
     """
     Link bhejega aur specifically ExtraPe ke naye reply ka wait karega.
     """
+    # 🛡️ HOSTING FIX: Agar client init nahi hua toh seedha original link return karo
+    if client is None:
+        print("⚠️ Telethon client not initialized. Returning original link.")
+        return original_link
+        
     try:
         # 🚀 Server par connection open/close check karne ka safe tareeka
         if not client.is_connected():
@@ -59,11 +68,38 @@ async def get_extrape_link(original_link):
     except asyncio.TimeoutError:
         print("⏳ Timeout: ExtraPe ne 60 sec tak reply nahi diya. Backup chalayenge.")
         return original_link
+    except ConnectionError:
+        print("❌ Telethon Connection Error: Internet ya Telegram server down hai.")
+        return original_link
     except Exception as e:
         print(f"❌ Userbot Error: {e}")
         return original_link
 
 def get_sync_link(original_link):
-    # Server par async loops ko run karne ka safe wrapper
-    with client:
-        return client.loop.run_until_complete(get_extrape_link(original_link))
+    # 🛡️ HOSTING FIX: Agar client None hai toh async loop mat chalao
+    if client is None:
+        print("⚠️ Telethon client not available. Using original link.")
+        return original_link
+        
+    try:
+        # 🛡️ THREAD FIX: Background thread mein event loop nahi hota,
+        # toh naya banao agar zaroorat ho
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # "There is no current event loop in thread" — naya banao
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        if loop.is_running():
+            # Agar loop pehle se chal raha hai (jaise Jupyter ya async server par)
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                result = pool.submit(asyncio.run, get_extrape_link(original_link)).result(timeout=90)
+            return result
+            
+        with client:
+            return client.loop.run_until_complete(get_extrape_link(original_link))
+    except Exception as e:
+        print(f"❌ Sync Link Error: {e}")
+        return original_link

@@ -34,33 +34,83 @@ def send_telegram_message(text, image_url=None, chat_id=None):
         }
         
         try:
-            response = requests.post(url, data=payload)
+            response = requests.post(url, data=payload, timeout=15)
             # Agar photo successfully chali gayi
             if response.status_code == 200:
                 print(f"✅ Telegram par VIP Photo/Message chala gaya! (Channel: {chat_id})")
                 return response.json()
+            elif response.status_code == 429:
+                # 🛡️ HOSTING FIX: Telegram rate limit handle karna
+                print(f"⚠️ Telegram Rate Limit! Thoda wait kar rahe hain...")
+                try:
+                    retry_after = response.json().get('parameters', {}).get('retry_after', 10)
+                except:
+                    retry_after = 10
+                import time
+                time.sleep(retry_after)
+                # Retry once
+                try:
+                    response = requests.post(url, data=payload, timeout=15)
+                    if response.status_code == 200:
+                        print(f"✅ Retry successful! Photo chali gayi.")
+                        return response.json()
+                except:
+                    pass
+                print(f"⚠️ Photo retry bhi fail. Text bhej rahe hain...")
             else:
                 print(f"⚠️ Photo fail hui: {response.text}")
                 print("🔄 Backup: Sirf Text bhej rahe hain...")
+        except requests.exceptions.Timeout:
+            print("⚠️ Photo request timeout. Text bhej rahe hain...")
+        except requests.exceptions.ConnectionError:
+            print("⚠️ Internet connection issue. Text bhej rahe hain...")
         except Exception as e:
             print(f"⚠️ Photo request error: {e}")
     
     # 📝 Backup: Agar photo nahi thi ya photo bhejna fail ho gaya
     url = f"https://api.telegram.org/bot{clean_token}/sendMessage"
+    
+    # 🛡️ HOSTING FIX: Caption 4096 limit, Message 4096 limit
+    safe_text = text[:4096] if text else "Deal Check Karo! 🔥"
+    
     payload = {
         "chat_id": chat_id,
-        "text": text,
+        "text": safe_text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True  
     }
 
     try:
-        response = requests.post(url, data=payload)
+        response = requests.post(url, data=payload, timeout=15)
         if response.status_code == 200:
             print("✅ Telegram par Text Message chala gaya!")
+        elif response.status_code == 429:
+            # 🛡️ Rate limit for text messages too
+            print(f"⚠️ Telegram Rate Limit on text!")
+            try:
+                retry_after = response.json().get('parameters', {}).get('retry_after', 10)
+            except:
+                retry_after = 10
+            import time
+            time.sleep(retry_after)
+            try:
+                response = requests.post(url, data=payload, timeout=15)
+                if response.status_code == 200:
+                    print("✅ Retry successful!")
+            except:
+                pass
         else:
             print(f"❌ Telegram Error: {response.text}")
-        return response.json()
+        try:
+            return response.json()
+        except:
+            return None
+    except requests.exceptions.Timeout:
+        print("❌ Telegram Text Timeout: Server respond nahi kar raha.")
+        return None
+    except requests.exceptions.ConnectionError:
+        print("❌ Telegram Connection Error: Internet down hai ya Telegram blocked hai.")
+        return None
     except Exception as e:
         print(f"❌ Telegram Error: {e}")
         return None
