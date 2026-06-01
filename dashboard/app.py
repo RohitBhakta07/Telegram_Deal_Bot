@@ -96,8 +96,6 @@ def settings():
     extrape_affid = db_manager.get_setting('EXTRAPE_AFFID', '')
     extrape_param1 = db_manager.get_setting('EXTRAPE_PARAM1', '')
     # ⚡ Bot Speed & Timing Settings (Defaults ke sath)
-    delay_post = db_manager.get_setting('DELAY_POST', '5')
-    delay_retry = db_manager.get_setting('DELAY_RETRY', '9')
     flash_interval = db_manager.get_setting('FLASH_INTERVAL', '3')
     round_wait = db_manager.get_setting('ROUND_WAIT', '15')
     long_sleep = db_manager.get_setting('LONG_SLEEP', '60')
@@ -118,7 +116,6 @@ def settings():
     return render_template('settings.html', 
                            api_id=api_id, api_hash=api_hash, bot_token=bot_token,
                            extrape_affid=extrape_affid, extrape_param1=extrape_param1,
-                           delay_post=delay_post, delay_retry=delay_retry, 
                            flash_interval=flash_interval, round_wait=round_wait, long_sleep=long_sleep,
                            keywords_per_round=keywords_per_round,
                            default_post_format=default_post_format,
@@ -140,8 +137,6 @@ def save_settings():
         db_manager.update_setting('EXTRAPE_AFFID', request.form.get('extrape_affid'))
         db_manager.update_setting('EXTRAPE_PARAM1', request.form.get('extrape_param1'))
         # Save Speed Settings
-        db_manager.update_setting('DELAY_POST', request.form.get('delay_post'))
-        db_manager.update_setting('DELAY_RETRY', request.form.get('delay_retry'))
         db_manager.update_setting('FLASH_INTERVAL', request.form.get('flash_interval'))
         db_manager.update_setting('ROUND_WAIT', request.form.get('round_wait'))
         db_manager.update_setting('LONG_SLEEP', request.form.get('long_sleep'))

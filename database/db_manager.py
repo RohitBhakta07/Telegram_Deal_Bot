@@ -116,8 +116,6 @@ def init_db():
         'DEFAULT_POST_FORMAT': 'hot_deal',
         'FLASH_POST_FORMAT': 'mega_loot',
         'bot_status': 'ON',
-        'DELAY_POST': '5',
-        'DELAY_RETRY': '9',
         'FLASH_INTERVAL': '3',
         'ROUND_WAIT': '15',
         'LONG_SLEEP': '60',
