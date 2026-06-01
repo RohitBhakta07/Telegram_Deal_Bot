@@ -101,15 +101,34 @@ def settings():
     flash_interval = db_manager.get_setting('FLASH_INTERVAL', '3')
     round_wait = db_manager.get_setting('ROUND_WAIT', '15')
     long_sleep = db_manager.get_setting('LONG_SLEEP', '60')
-    # 🚀 NEW: Keywords Per Round
-    keywords_per_round = db_manager.get_setting('KEYWORDS_PER_ROUND', '1')
+    # 🚀 Keywords Per Round
+    keywords_per_round = db_manager.get_setting('KEYWORDS_PER_ROUND', '4')
+    default_post_format = db_manager.get_setting('DEFAULT_POST_FORMAT', 'hot_deal')
+    flash_post_format = db_manager.get_setting('FLASH_POST_FORMAT', 'mega_loot')
+    price_screenshot = db_manager.normalize_price_screenshot_setting(
+        db_manager.get_setting('PRICE_SCREENSHOT', 'OFF')
+    )
+    # 🚀 V2: Priority Queue Architecture Settings
+    min_buyers_count = db_manager.get_setting('MIN_BUYERS_COUNT', '1000')
+    max_scrape_pages = db_manager.get_setting('MAX_SCRAPE_PAGES', '3')
+    max_workers = db_manager.get_setting('MAX_WORKERS', '2')
+    queue_delay_post = db_manager.get_setting('QUEUE_DELAY_POST', '15')
+    allow_missing_buyers = db_manager.get_setting('ALLOW_MISSING_BUYERS', 'OFF')
 
     return render_template('settings.html', 
                            api_id=api_id, api_hash=api_hash, bot_token=bot_token,
                            extrape_affid=extrape_affid, extrape_param1=extrape_param1,
                            delay_post=delay_post, delay_retry=delay_retry, 
                            flash_interval=flash_interval, round_wait=round_wait, long_sleep=long_sleep,
-                           keywords_per_round=keywords_per_round)
+                           keywords_per_round=keywords_per_round,
+                           default_post_format=default_post_format,
+                           flash_post_format=flash_post_format,
+                           price_screenshot=price_screenshot,
+                           min_buyers_count=min_buyers_count,
+                           max_scrape_pages=max_scrape_pages,
+                           max_workers=max_workers,
+                           queue_delay_post=queue_delay_post,
+                           allow_missing_buyers=allow_missing_buyers)
 
 @app.route('/save_settings', methods=['POST'])
 @login_required
@@ -126,8 +145,22 @@ def save_settings():
         db_manager.update_setting('FLASH_INTERVAL', request.form.get('flash_interval'))
         db_manager.update_setting('ROUND_WAIT', request.form.get('round_wait'))
         db_manager.update_setting('LONG_SLEEP', request.form.get('long_sleep'))
-        # 🚀 NEW: Keywords Per Round
+        # 🚀 Keywords Per Round
         db_manager.update_setting('KEYWORDS_PER_ROUND', request.form.get('keywords_per_round'))
+        db_manager.update_setting('DEFAULT_POST_FORMAT', request.form.get('default_post_format', 'hot_deal'))
+        db_manager.update_setting('FLASH_POST_FORMAT', request.form.get('flash_post_format', 'mega_loot'))
+        price_ss = db_manager.normalize_price_screenshot_setting(
+            request.form.get('price_screenshot', 'OFF')
+        )
+        db_manager.update_setting('PRICE_SCREENSHOT', price_ss)
+        # 🚀 V2: Priority Queue Architecture Settings
+        db_manager.update_setting('MIN_BUYERS_COUNT', request.form.get('min_buyers_count', '1000'))
+        db_manager.update_setting('MAX_SCRAPE_PAGES', request.form.get('max_scrape_pages', '3'))
+        db_manager.update_setting('MAX_WORKERS', request.form.get('max_workers', '2'))
+        db_manager.update_setting('QUEUE_DELAY_POST', request.form.get('queue_delay_post', '15'))
+        allow_mb = 'ON' if request.form.get('allow_missing_buyers') == 'ON' else 'OFF'
+        db_manager.update_setting('ALLOW_MISSING_BUYERS', allow_mb)
+        print(f"💾 V2 Settings saved: MinBuyers={request.form.get('min_buyers_count')}, Workers={request.form.get('max_workers')}")
 
         return redirect(url_for('settings'))
 
@@ -168,9 +201,10 @@ def add_category():
     name = request.form.get('name')
     keywords = request.form.get('keywords') 
     min_discount = request.form.get('min_discount')
-    
+    priority = request.form.get('priority', 'MEDIUM')
+    post_format = request.form.get('post_format', 'default')
     if name and keywords and min_discount:
-        db_manager.add_category(name, keywords, int(min_discount))
+        db_manager.add_category(name, keywords, int(min_discount), priority, post_format)
     return redirect(url_for('categories'))
 
 @app.route('/delete_category/<cat_id>')
@@ -185,9 +219,10 @@ def edit_category(cat_id):
     name = request.form.get('name')
     keywords = request.form.get('keywords')
     min_discount = request.form.get('min_discount')
-    
+    priority = request.form.get('priority', 'MEDIUM')
+    post_format = request.form.get('post_format', 'default')
     if name and keywords and min_discount:
-        db_manager.update_category(cat_id, name, keywords, int(min_discount))
+        db_manager.update_category(cat_id, name, keywords, int(min_discount), priority, post_format)
     return redirect(url_for('categories'))
 
 # ==========================================
@@ -241,6 +276,7 @@ def instant_post_send():
     Bot loop bilkul nahi rukega.
     """
     product_url = request.form.get('product_url', '').strip()
+    post_format = request.form.get('post_format', 'default')
     
     if not product_url:
         return jsonify({"status": "error", "message": "❌ Link khali hai! Flipkart ka link paste karo."})
@@ -248,10 +284,12 @@ def instant_post_send():
     if 'flipkart.com' not in product_url and 'fkrt.it' not in product_url:
         return jsonify({"status": "error", "message": "❌ Yeh Flipkart ka link nahi hai! Sirf Flipkart links paste karo."})
     
-    def process_instant_post(url):
+    def process_instant_post(url, chosen_format):
         try:
             from scraper.flipkart import scrape_single_product
-            from telegram.bot import send_telegram_message
+            from telegram.post_format import build_deal_message, resolve_post_format
+            from telegram.bot import send_telegram_deal_post
+            from telegram.deal_media import post_deal_message
             
             print(f"\n🚀 [INSTANT POST] Processing: {url[:60]}...")
             
@@ -296,23 +334,13 @@ def instant_post_send():
                     print(f"❌ [INSTANT POST] Backup bhi fail: {e2}. Original link use karunga.")
                     affiliate_link = url
             
-            # 3. Same format mein message banao (🔥 HOT DEAL format)
-            message = f"""🔥 <b>HOT DEAL | Verified  ✅</b>
-
-🛍️ {deal['title']}
-
-💰 <b>MRP : </b> <del>{deal['mrp']}</del>
-💸 <b>Deal Price : </b> {deal['price']}
-📉 <b>Flat {deal['discount']}</b>
-
-👉 <b>Check price on Flipkart: 👇</b> 
-{affiliate_link}
-
-⭐ <b>Rating : </b> {deal['rating']}
-📝 <b>Product Highlights:</b>
-{deal['highlights']}
-⚡ Limited time deal
-⏳ Stock fast finish hota hai!"""
+            fmt = resolve_post_format(
+                is_flash=False,
+                category_format=chosen_format,
+                default_format=db_manager.get_setting('DEFAULT_POST_FORMAT', 'hot_deal'),
+                flash_format=db_manager.get_setting('FLASH_POST_FORMAT', 'mega_loot'),
+            )
+            message = build_deal_message(deal, affiliate_link, fmt)
             
             # 4. Saare channels par post karo
             try:
@@ -326,7 +354,7 @@ def instant_post_send():
             
             for channel in channels:
                 try:
-                    send_telegram_message(message, image_url=deal.get('image'), chat_id=channel[0])
+                    post_deal_message(send_telegram_deal_post, channel[0], message, deal)
                 except Exception as e:
                     print(f"❌ [INSTANT POST] Channel {channel[0]} par send fail: {e}")
             
@@ -347,7 +375,7 @@ def instant_post_send():
             print(f"❌ [INSTANT POST] Error: {e}")
     
     # Background thread mein chalao taaki bot loop na ruke
-    thread = threading.Thread(target=process_instant_post, args=(product_url,), daemon=True)
+    thread = threading.Thread(target=process_instant_post, args=(product_url, post_format), daemon=True)
     thread.start()
     
     return jsonify({"status": "success", "message": "🚀 Processing shuru ho gaya! 10-15 sec mein Telegram par post ho jayega."})

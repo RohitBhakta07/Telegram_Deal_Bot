@@ -86,10 +86,11 @@ def get_current_trend(vip_products_list):
     print(f"📈 Final Trend Pakda: '{selected_trend}'")
     return selected_trend
 
-def build_flipkart_url(keyword, min_discount=60):
+def build_flipkart_url(keyword, min_discount=60, page=1):
     """
     Keyword aur discount ko milakar Flipkart ka search link banata hai.
+    page parameter se Page 2, 3 etc. par ja sakte hain (retry loop ke liye).
     """
     encoded_keyword = urllib.parse.quote_plus(keyword)
-    url = f"https://www.flipkart.com/search?q={encoded_keyword}&p%5B%5D=facets.discount_range_v1%255B%255D%3D{min_discount}%2525%2Bmore"
+    url = f"https://www.flipkart.com/search?q={encoded_keyword}&p%5B%5D=facets.discount_range_v1%255B%255D%3D{min_discount}%2525%2Bmore&page={page}"
     return url

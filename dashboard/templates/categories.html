@@ -32,6 +32,22 @@
                                     class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
                             </div>
                         </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="text-sm font-semibold text-slate-400">Priority</label>
+                            <select name="priority" class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 ring-primary/30 outline-none">
+                                <option value="HIGH">HIGH</option>
+                                <option value="MEDIUM" selected>MEDIUM</option>
+                                <option value="LOW">LOW</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <label class="text-sm font-semibold text-slate-400">Post format</label>
+                            <select name="post_format" class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 ring-primary/30 outline-none">
+                                <option value="default">Settings default</option>
+                                <option value="hot_deal">Format 1 — HOT DEAL</option>
+                                <option value="mega_loot">Format 2 — MEGA LOOT</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="flex flex-col gap-2">
                         <label class="text-sm font-semibold text-slate-400">Target Keywords (Comma separated)</label>
@@ -72,6 +88,15 @@
                                 class="text-lg font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors">
                                 {{ cat[1] }}</h4>
                             <p class="text-xs text-slate-500">Live monitoring active</p>
+                                                        {% set priority_color = '#f87171' if cat[4] == 'HIGH' else '#fbbf24' if cat[4] == 'MEDIUM' else '#60a5fa' %}
+                                                        <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-bold"
+                                                                    style="background-color: {{ priority_color }}; color: white;">
+                                                                {{ cat[4] }} PRIORITY
+                                                        </span>
+                            {% set fmt = cat[5] if cat|length > 5 else 'default' %}
+                            <span class="inline-block mt-1 ml-1 px-2 py-0.5 rounded-full text-xs font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                                {% if fmt == 'mega_loot' %}MEGA LOOT{% elif fmt == 'hot_deal' %}HOT DEAL{% else %}DEFAULT FMT{% endif %}
+                            </span>
                         </div>
                         <div class="gradient-accent text-white text-xs font-black px-3 py-1.5 rounded-lg">
                             MIN {{ cat[3] }}% OFF
@@ -94,7 +119,13 @@
                         </div>
                         <div class="flex gap-2">
                             <button
-                                onclick="openEditModal('{{ cat[0] }}', '{{ cat[1] }}', '{{ cat[2] }}', '{{ cat[3] }}')"
+                                data-id="{{ cat[0] }}"
+                                data-name="{{ cat[1]|e }}"
+                                data-keywords="{{ cat[2]|e }}"
+                                data-discount="{{ cat[3] }}"
+                                data-priority="{{ cat[4] }}"
+                                data-format="{{ cat[5] if cat|length > 5 else 'default' }}"
+                                onclick="openEditModalFromButton(this)"
                                 class="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
                                 title="Edit Category">
                                 <span class="material-symbols-outlined text-[20px]">edit</span>
@@ -141,6 +172,22 @@
                         <input type="number" name="min_discount" id="edit_discount" required
                             class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none focus:ring-2 ring-primary/30">
                     </div>
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-400">Priority</label>
+                        <select name="priority" id="edit_priority" class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 ring-primary/30 outline-none">
+                            <option value="HIGH">HIGH</option>
+                            <option value="MEDIUM">MEDIUM</option>
+                            <option value="LOW">LOW</option>
+                        </select>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-400">Post format</label>
+                        <select name="post_format" id="edit_format" class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 focus:ring-2 ring-primary/30 outline-none">
+                            <option value="default">Settings default</option>
+                            <option value="hot_deal">Format 1 — HOT DEAL</option>
+                            <option value="mega_loot">Format 2 — MEGA LOOT</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="flex flex-col gap-2">
                     <label class="text-sm font-semibold text-slate-400">Keywords (Comma separated)</label>
@@ -160,12 +207,33 @@
 </div>
 
 <script>
-    function openEditModal(id, name, keywords, discount) {
+    function openEditModalFromButton(btn) {
+        var id = btn.getAttribute('data-id');
+        var name = btn.getAttribute('data-name') || '';
+        var keywords = btn.getAttribute('data-keywords') || '';
+        var discount = btn.getAttribute('data-discount') || '';
+        var priority = btn.getAttribute('data-priority') || 'MEDIUM';
+        var postFormat = btn.getAttribute('data-format') || 'default';
+
         document.getElementById('editModal').classList.remove('hidden');
         document.getElementById('editForm').action = '/edit_category/' + id;
         document.getElementById('edit_name').value = name;
         document.getElementById('edit_keywords').value = keywords;
         document.getElementById('edit_discount').value = discount;
+        var prioritySelect = document.getElementById('edit_priority');
+        for (var i = 0; i < prioritySelect.options.length; i++) {
+            if (prioritySelect.options[i].value === priority) {
+                prioritySelect.selectedIndex = i;
+                break;
+            }
+        }
+        var formatSelect = document.getElementById('edit_format');
+        for (var j = 0; j < formatSelect.options.length; j++) {
+            if (formatSelect.options[j].value === postFormat) {
+                formatSelect.selectedIndex = j;
+                break;
+            }
+        }
     }
 
     function closeEditModal() {

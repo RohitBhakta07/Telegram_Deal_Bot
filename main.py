@@ -3,6 +3,9 @@ import sys
 import time
 import requests
 import random
+import queue
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Isse bot ko pata chalega ki database aur analyzer folders kahan hain
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,11 +19,11 @@ log_file_path = os.path.join(BASE_DIR, 'bot.log')
 
 class Logger(object):
     def __init__(self):
-        self.terminal = sys.__stdout__  # 🛡️ HOSTING FIX: Original stdout save karo, Logger-in-Logger se bachne ke liye
+        self.terminal = sys.__stdout__  # 🛡️ HOSTING FIX: Original stdout save karo
         try:
             self.log = open(log_file_path, "a", encoding="utf-8")
         except Exception:
-            self.log = None  # 🛡️ Agar log file nahi khul paaye (permission error on server)
+            self.log = None
 
     def write(self, message):
         try:
@@ -32,7 +35,7 @@ class Logger(object):
                 self.log.write(message)
                 self.log.flush() 
             except Exception:
-                pass  # 🛡️ Disk full ya write permission error handle
+                pass
 
     def flush(self):
         try:
@@ -44,28 +47,37 @@ sys.stdout = Logger()
 sys.stderr = Logger()
 
 from analyzer.trends import get_current_trend, build_flipkart_url
-from scraper.flipkart import get_flipkart_deals
-from telegram.bot import send_telegram_message  
+from scraper.flipkart import get_flipkart_deals, scrape_keyword_full
+from telegram.bot import send_telegram_message, send_telegram_deal_post
 from config import EXTRAPE_AFFID, EXTRAPE_PARAM1
 from database import db_manager
 from userbot.extrape_agent import get_sync_link
-from analyzer.fake_drop import is_genuine_deal
+from analyzer.deal_selector import pick_best_deal
+from telegram.post_format import build_deal_message, resolve_post_format
+from telegram.deal_media import post_deal_message
+
+# 🛡️ Thread-safe DB write lock
+_db_lock = threading.Lock()
 
 def is_link_already_sent(link):
     try:
-        return db_manager.is_link_already_sent(link)
+        with _db_lock:
+            return db_manager.is_link_already_sent(link)
     except Exception as e:
         print(f"⚠️ DB Link Check Error: {e}")
-        return False  # 🛡️ Agar DB down ho toh deal bhejne do, duplicate se crash better hai
+        return False
 
 def clear_old_links():
     try:
-        total_deals = db_manager.get_total_deals_count()
-        if total_deals >= 192 :
-            db_manager.clear_all_deals()  
-            print(f"🧹 Memory Reset: {total_deals} deals poori hui. Naya cycle shuru!")
+        with _db_lock:
+            total_deals = db_manager.get_total_deals_count()
+            if total_deals >= 192:
+                db_manager.clear_all_deals() 
+                db_manager.update_setting('used_keywords', '') 
+                print(f"🧹 Memory Reset: {total_deals} deals poori hui. Naya cycle shuru!")
     except Exception as e:
         print(f"⚠️ DB Count Error: {e}")
+
 
 def get_affiliate_link(original_url):
     print(f"🕵️‍♂️ Secret Agent ko link bhej rahe hain...")
@@ -96,383 +108,437 @@ def get_affiliate_link(original_url):
         print(f"❌ Affiliate Backup Error: {e}")
         return original_url
 
+
 # ==========================================
-# ⚡ THE FLASH SALE TRACKER (ALL Blocks Checked + 24 Hr Lock)
+# 📬 V2: CONSUMER THREAD — Queue se deals pop karke Telegram par bhejta hai
+# ==========================================
+def consumer_thread(deal_queue, stop_event):
+    """
+    Background thread — Queue se highest priority deal pop karta hai
+    aur Telegram par bhejta hai with DELAY_POST gap.
+    """
+    print("📬 [Consumer] Telegram Poster Thread shuru ho gaya!")
+    
+    while not stop_event.is_set():
+        try:
+            # Queue se deal uthao (5 second timeout — taaki stop_event check hota rahe)
+            try:
+                priority, timestamp, item = deal_queue.get(timeout=5)
+            except queue.Empty:
+                continue
+            
+            deal = item['deal']
+            score = item['score']
+            keyword = item['keyword']
+            category = item['category']
+            post_fmt = item['post_format']
+            
+            title_short = deal.get('title', '')[:40]
+            print(f"\n📬 [Consumer] Processing: {title_short}... (Priority={priority}, Score={score['total']})")
+            
+            # ---- DUPLICATE CHECK (Late validation) ----
+            link = deal.get('link', '')
+            if is_link_already_sent(link):
+                print(f"  🔁 [Consumer] Already sent, skip: {title_short}")
+                deal_queue.task_done()
+                continue
+            
+            # ---- AFFILIATE LINK GENERATE ----
+            try:
+                final_affiliate_link = get_affiliate_link(link)
+            except Exception as e:
+                print(f"  ❌ [Consumer] Affiliate link error: {e}")
+                final_affiliate_link = link
+            
+            # ---- FORMAT MESSAGE ----
+            try:
+                resolved_fmt = resolve_post_format(
+                    is_flash=(priority <= 1),
+                    category_format=post_fmt,
+                    default_format=db_manager.get_setting('DEFAULT_POST_FORMAT', 'hot_deal'),
+                    flash_format=db_manager.get_setting('FLASH_POST_FORMAT', 'mega_loot'),
+                )
+                message = build_deal_message(deal, final_affiliate_link, resolved_fmt)
+            except Exception as e:
+                print(f"  ❌ [Consumer] Message format error: {e}")
+                deal_queue.task_done()
+                continue
+            
+            # ---- SEND TO ALL CHANNELS ----
+            try:
+                with _db_lock:
+                    channels = db_manager.get_all_channels()
+            except Exception as e:
+                print(f"  ❌ [Consumer] Channel DB error: {e}")
+                channels = []
+            
+            if channels:
+                for channel in channels:
+                    try:
+                        post_deal_message(
+                            send_telegram_deal_post, channel[0], message, deal
+                        )
+                        print(f"  ✅ [Consumer] Sent to {channel[0]}: {title_short}")
+                    except Exception as e:
+                        print(f"  ❌ [Consumer] Telegram error ({channel[0]}): {e}")
+            else:
+                print("  ⚠️ [Consumer] Koi channel nahi hai!")
+            
+            # ---- SAVE TO DATABASE ----
+            try:
+                with _db_lock:
+                    db_manager.save_deal(
+                        title=deal.get('title', ''),
+                        original_link=link,
+                        affiliate_link=final_affiliate_link,
+                        category=category
+                    )
+            except Exception as e:
+                print(f"  ⚠️ [Consumer] Deal save error: {e}")
+            
+            deal_queue.task_done()
+            
+            # ---- DELAY BEFORE NEXT POST (Dashboard controlled) ----
+            try:
+                delay = int(db_manager.get_setting('QUEUE_DELAY_POST', 15))
+            except Exception:
+                delay = 15
+            
+            print(f"  ⏳ [Consumer] {delay} seconds wait before next post...")
+            
+            # Sleep in small chunks taaki stop_event check hota rahe
+            for _ in range(delay):
+                if stop_event.is_set():
+                    break
+                time.sleep(1)
+        
+        except Exception as e:
+            print(f"  ❌ [Consumer] Error: {e}")
+            time.sleep(5)
+    
+    print("📬 [Consumer] Thread stopped.")
+
+
+# ==========================================
+# ⚡ FLASH SALE TRACKER (V2 — Parallel + Queue Push)
 # ==========================================
 flash_cooldowns = {}
 
-def check_flash_sales():
+def check_flash_sales(deal_queue):
+    """Flash deals ko parallel scrape karo aur queue mein daalo (Priority 0 — sabse pehle post)."""
     try:
-        print("\n⚡ [NINJA TRACKER] Saare MEGA LOOT targets check kar rahe hain...")
+        print("\n⚡ [FLASH] Saare targets ek saath check ho rahe hain...")
         
         try:
             flash_data = db_manager.get_all_flash_keywords()
         except Exception as e:
-            print(f"❌ Flash Keywords DB Error: {e}")
+            print(f"❌ [FLASH] Flash Keywords DB Error: {e}")
             return
         
         if not flash_data:
-            print("⚠️ Sniper Tracker: Dashboard mein koi target set nahi hai. Skip kar rahe hain.")
+            print("⚠️ [FLASH] Dashboard mein koi target set nahi hai.")
             return
-
-        current_time = time.time()
-        available_targets = []
         
+        current_time = time.time()
+        available = []
         for target in flash_data:
             try:
                 keyword = target[1]
-                last_used_time = flash_cooldowns.get(keyword, 0)
-                
-                # Check: Kya is keyword ko use hue 24 ghante (86400 seconds) ho gaye hain?
-                if (current_time - last_used_time) > 86400:
-                    available_targets.append(target)
-            except (IndexError, TypeError) as e:
-                print(f"⚠️ Flash target data corrupt, skip: {e}")
+                last_used = flash_cooldowns.get(keyword, 0)
+                if (current_time - last_used) > 86400:  # 24hr lock
+                    available.append(target)
+            except (IndexError, TypeError):
                 continue
-                
-        if not available_targets:
-            print("⏳ Sniper Alert: Saare Flash Targets par 24-Ghante ka Lock laga hua hai. Market shant hai.")
+        
+        if not available:
+            print("⏳ [FLASH] Saare targets 24hr locked hain.")
             return
-
-        print(f"🎯 Total {len(available_targets)} active targets mile. Ek-ek karke sabko check kar rahe hain...\n")
-
-        for target in available_targets:
-            try:
-                flash_keyword = target[1] 
-                target_discount = target[2] 
-                
-                # 🛡️ HOSTING FIX: Agar discount galat type mein aaye
+        
+        print(f"🎯 [FLASH] {len(available)} active targets. Parallel scrape shuru...")
+        
+        try:
+            min_buyers = int(db_manager.get_setting('MIN_BUYERS_COUNT', 1000))
+            allow_missing = db_manager.get_setting('ALLOW_MISSING_BUYERS', 'OFF') == 'ON'
+        except Exception:
+            min_buyers = 1000
+            allow_missing = False
+        
+        max_flash_workers = min(len(available), 3)  # Max 3 parallel flash scrapers
+        
+        with ThreadPoolExecutor(max_workers=max_flash_workers) as flash_executor:
+            futures = {}
+            for target in available:
                 try:
-                    target_discount = int(target_discount)
-                except (ValueError, TypeError):
-                    target_discount = 50  # Safe default
+                    flash_keyword = target[1]
+                    target_discount = int(target[2]) if target[2] else 50
+                except (IndexError, ValueError, TypeError):
+                    continue
                 
-                print(f"🔍 Scanning Target: '{flash_keyword.upper()}' (Min {target_discount}% DROP)")
+                flash_settings = {
+                    'min_discount': target_discount,
+                    'min_buyers_count': min_buyers,
+                    'max_pages': 1,  # Flash deals = sirf Page 1 (speed ke liye)
+                    'category_name': 'FLASH LOOT',
+                    'priority_weight': 4,  # HIGH priority
+                    'post_format': db_manager.get_setting('FLASH_POST_FORMAT', 'mega_loot'),
+                    'allow_missing_buyers': allow_missing,
+                }
                 
-                target_url = build_flipkart_url(flash_keyword, min_discount=target_discount) 
-                deals = get_flipkart_deals(target_url, required_discount=target_discount)
+                # Staggered start — 2 sec gap between flash scrapers
+                time.sleep(random.uniform(1, 3))
                 
-                if deals:
-                    random.shuffle(deals)
-                    for deal in deals:
-                        try:
-                            if not is_genuine_deal(deal['title'], deal['price'], deal['mrp'], deal['discount']):
-                                continue
-                            if is_link_already_sent(deal['link']):
-                                print(f"🔁 Repeat skipped: {deal['title']}")
-                                continue
-
-                            final_affiliate_link = get_affiliate_link(deal['link'])
-                            
-                            message = f"""🚨 <b>MEGA LOOT ALERT | PRICE DROP</b> 🚨
-
-🛍️ {deal['title']}
-
-💰 <b>MRP : </b> <del>{deal['mrp']}</del>
-💸 <b>Loot Price : </b> {deal['price']}
-📉 <b>Flat {deal['discount']}</b>
-
-👉 <b>Loot Fast (Stock ends in mins): 👇</b> 
-{final_affiliate_link}
-
-⚡ <b>Flash Deal:</b> Yeh deal kisi bhi waqt Sold Out ho sakti hai!"""
-                            
-                            try:
-                                channels = db_manager.get_all_channels()
-                            except Exception as e:
-                                print(f"❌ Channel DB Error: {e}")
-                                channels = []
-                                
-                            if channels:
-                                for channel in channels:
-                                    try:
-                                        send_telegram_message(message, image_url=deal.get('image'), chat_id=channel[0])
-                                    except Exception as e:
-                                        print(f"❌ Telegram send error (channel {channel[0]}): {e}")
-                            
-                            try:
-                                db_manager.save_deal(
-                                    title=deal['title'],
-                                    original_link=deal['link'],
-                                    affiliate_link=final_affiliate_link,
-                                    category="FLASH LOOT"
-                                )
-                            except Exception as e:
-                                print(f"⚠️ Deal save error: {e}")
-                                
-                            print(f"🚨🚨 FLASH DEAL SENT: {deal['title']} 🚨🚨")
-                            
-                            # 🔒 THE 24-HOUR LOCK
-                            flash_cooldowns[flash_keyword] = current_time
-                            print(f"🔒 KEYWORD LOCKED: '{flash_keyword}' ab agle 24 ghante tak search nahi hoga!\n")
-                            
-                            break
-                        except KeyError as e:
-                            print(f"⚠️ Deal data incomplete (missing key: {e}), skip...")
-                            continue
-                else:
-                    print(f"📉 Deal nahi mili.\n")
-
-                # 🛑 ANTI-BAN DELAY (Admin Controlled)
+                future = flash_executor.submit(
+                    scrape_keyword_full,
+                    flash_keyword,
+                    flash_settings,
+                    deal_queue,
+                    is_link_already_sent,
+                )
+                futures[future] = flash_keyword
+            
+            for future in as_completed(futures):
+                keyword = futures[future]
                 try:
-                    delay_post = int(db_manager.get_setting('DELAY_POST', 5))
-                except Exception:
-                    delay_post = 5
-                time.sleep(delay_post) 
-                
-            except Exception as e:
-                print(f"❌ Flash target processing error: {e}")
-                continue
-                
+                    future.result()
+                    flash_cooldowns[keyword] = current_time  # 24hr lock
+                    print(f"🔒 [FLASH] '{keyword}' locked for 24 hours.")
+                except Exception as e:
+                    print(f"❌ [FLASH] '{keyword}' error: {e}")
+    
     except Exception as e:
-        print(f"❌ FLASH SALES CRITICAL ERROR: {e}")
+        print(f"❌ [FLASH] CRITICAL ERROR: {e}")
         print("🔄 Bot continue karega...")
 
+
 # ==========================================
-# 🤖 ASALI BOT LOGIC 
+# 🤖 V2: MAIN BOT LOGIC (ThreadPool + PriorityQueue)
 # ==========================================
 def run_bot():
-    print("🤖 Deal Hunter Bot Start ho gaya hai...\n")
+    print("🤖 Deal Hunter Bot V2 (Priority Queue Architecture) Start!")
     
-    round_in_hour = 0 
-    used_keywords = set()  
-    is_live_trend_round = True  
-
+    try:
+        ss = db_manager.normalize_price_screenshot_setting(
+            db_manager.get_setting("PRICE_SCREENSHOT", "OFF")
+        )
+        print(f"📷 Price screenshot: {ss}")
+    except Exception as e:
+        print(f"⚠️ Could not read PRICE_SCREENSHOT setting: {e}")
+    
+    # ---- SHARED PRIORITY QUEUE ----
+    deal_queue = queue.PriorityQueue()
+    
+    # ---- START CONSUMER THREAD ----
+    stop_event = threading.Event()
+    poster = threading.Thread(
+        target=consumer_thread,
+        args=(deal_queue, stop_event),
+        daemon=True,
+        name="TelegramPoster"
+    )
+    poster.start()
+    
+    # ---- MAIN LOOP VARIABLES ----
+    round_in_hour = 0
+    is_live_trend_round = True
+    
+    saved_memory = db_manager.get_setting('used_keywords', '')
+    used_keywords = set(saved_memory.split(',')) if saved_memory else set()
+    print(f"🧠 Memory Loaded: {len(used_keywords)} keywords remembered.")
+    
     while True:
         try:
             # 🛡️ EMERGENCY KILL SWITCH CHECK
             try:
                 bot_status = db_manager.get_setting('bot_status', 'ON')
-            except Exception as e:
-                print(f"⚠️ DB status check fail: {e}. Assuming ON...")
+            except Exception:
                 bot_status = 'ON'
             
             if bot_status == 'OFF':
                 print("💤 Bot is PAUSED from Dashboard. Waiting 60 seconds...")
                 time.sleep(60)
                 continue
-     
+            
+            # ---- READ CATEGORIES FROM DATABASE ----
             try:
                 db_categories = db_manager.get_all_categories()
             except Exception as e:
                 print(f"❌ Categories DB Error: {e}. 2 min wait...")
                 time.sleep(120)
                 continue
-
+            
             if not db_categories:
                 print("⚠️ Dashboard mein koi category/keyword nahi mila. 2 min wait...")
                 time.sleep(120)
                 continue
-
+            
+            db_categories = db_manager.order_categories_by_priority(db_categories)
+            keyword_weights = db_manager.build_keyword_weights(db_categories)
+            
+            priority_summary = ', '.join(
+                f"{cat[1]}={db_manager.normalize_priority(cat[4] if len(cat) > 4 else 'MEDIUM')}"
+                for cat in db_categories
+            )
+            print(f"📌 Category priorities: {priority_summary}")
+            
+            # Build category lookup maps
             MARKET_DATA = {}
             ALL_KEYWORDS_SET = set()
-
+            category_priority_map = {}
+            category_format_map = {}
+            
             for cat in db_categories:
                 try:
                     cat_name = cat[1]
                     cat_keywords = [k.strip().lower() for k in cat[2].split(',')]
                     min_disc = int(cat[3])
-
+                    priority = cat[4] if len(cat) > 4 else 'MEDIUM'
+                    post_fmt = cat[5] if len(cat) > 5 else 'default'
+                    
                     MARKET_DATA[cat_name] = {
                         "keywords": cat_keywords,
                         "min_discount": min_disc
                     }
                     ALL_KEYWORDS_SET.update(cat_keywords)
+                    category_priority_map[cat_name] = db_manager.get_priority_weight(priority)
+                    category_format_map[cat_name] = post_fmt
                 except (IndexError, TypeError, ValueError) as e:
                     print(f"⚠️ Category data corrupt, skip: {e}")
                     continue
-
-            # 🛡️ HOSTING FIX: Agar saari categories corrupt hain toh empty set hoga
+            
             if not ALL_KEYWORDS_SET:
-                print("⚠️ Koi valid keyword nahi mila categories mein. 2 min wait...")
+                print("⚠️ Koi valid keyword nahi mila. 2 min wait...")
                 time.sleep(120)
                 continue
-
-            used_keywords = used_keywords.intersection(ALL_KEYWORDS_SET)
-            clear_old_links() 
             
-            max_attempts = 3
-            current_attempt = 1
-            deals_sent_this_round = 0
+            used_keywords = used_keywords.intersection(ALL_KEYWORDS_SET)
+            clear_old_links()
+            
+            # ---- READ DYNAMIC SETTINGS FROM DATABASE ----
+            try:
+                keywords_per_round = max(1, min(10, int(db_manager.get_setting('KEYWORDS_PER_ROUND', 4))))
+                max_workers = max(1, min(6, int(db_manager.get_setting('MAX_WORKERS', 2))))
+                min_buyers = int(db_manager.get_setting('MIN_BUYERS_COUNT', 1000))
+                max_pages = max(1, min(5, int(db_manager.get_setting('MAX_SCRAPE_PAGES', 3))))
+                allow_missing = db_manager.get_setting('ALLOW_MISSING_BUYERS', 'OFF') == 'ON'
+            except Exception:
+                keywords_per_round, max_workers, min_buyers, max_pages = 4, 2, 1000, 3
+                allow_missing = False
             
             if is_live_trend_round:
-                print("\n==================================================")
-                print(f"🌍 [ROUND {round_in_hour+1}/4] : LIVE MARKET TREND")
-                print("==================================================")
+                round_label = "LIVE MARKET TREND"
             else:
-                print("\n==================================================")
-                print(f"📦 [ROUND {round_in_hour+1}/4] : DATABASE ROTATION")
-                print("==================================================")
-
-            while deals_sent_this_round < 2 and current_attempt <= max_attempts:
-                print(f"\n🔄 --- ATTEMPT {current_attempt}/{max_attempts} ---")
-                
-                # 🚀 NEW: Har attempt ke start mein KEYWORDS_PER_ROUND DB se padho
-                # (Agar beech mein dashboard se change kiya toh agle attempt mein apply hoga)
+                round_label = "DATABASE ROTATION"
+            
+            print(f"\n{'='*55}")
+            print(f"🚀 [ROUND {round_in_hour+1}/4] : {round_label}")
+            print(f"   Workers={max_workers} | MinBuyers={min_buyers} | MaxPages={max_pages}")
+            print(f"{'='*55}")
+            
+            # ---- SELECT KEYWORDS FOR THIS ROUND ----
+            keywords_to_scrape = []
+            
+            # Live trend (har doosre round mein)
+            if is_live_trend_round:
                 try:
-                    keywords_per_round = int(db_manager.get_setting('KEYWORDS_PER_ROUND', 1))
-                except Exception:
-                    keywords_per_round = 1
-                if keywords_per_round < 1:
-                    keywords_per_round = 1
-                if keywords_per_round > 10:
-                    keywords_per_round = 10
-                    
-                print(f"🔢 Keywords Per Round: {keywords_per_round}")
-                
-                # 🚀 MULTI-KEYWORD LOOP: N keywords ek saath scrape karo
-                keywords_to_scrape = []
-                
-                # Pehla keyword: Trend ya DB rotation (existing logic)
-                if is_live_trend_round and len(keywords_to_scrape) == 0:
-                    try:
-                        trend = get_current_trend(list(ALL_KEYWORDS_SET))
-                    except Exception as e:
-                        print(f"⚠️ Google Trends error: {e}. Database se backup le rahe hain...")
-                        trend = random.choice(list(ALL_KEYWORDS_SET))
-                        
-                    print(f"🔥 Aaj ka Trending Keyword: {trend}")
-                    
+                    trend = get_current_trend(list(ALL_KEYWORDS_SET))
+                    print(f"🔥 Trending Keyword: {trend}")
                     if trend not in used_keywords:
                         keywords_to_scrape.append(trend)
                     else:
-                        print(f"⚠️ SYSTEM OVERRIDE: '{trend}' pehle hi post ho chuka hai. DB Backup use karunga.")
+                        print(f"⚠️ '{trend}' pehle use ho chuka. DB backup se lenge.")
+                except Exception as e:
+                    print(f"⚠️ Google Trends error: {e}. DB backup use karunga.")
+            
+            # Baaki keywords DB se (weighted random)
+            remaining_pool = list(ALL_KEYWORDS_SET - used_keywords - set(keywords_to_scrape))
+            if not remaining_pool:
+                used_keywords.clear()
+                remaining_pool = list(ALL_KEYWORDS_SET - set(keywords_to_scrape))
+            
+            while len(keywords_to_scrape) < keywords_per_round and remaining_pool:
+                picked = db_manager.pick_weighted_keyword(remaining_pool, keyword_weights)
+                keywords_to_scrape.append(picked)
+                remaining_pool.remove(picked)
+            
+            print(f"📋 Is round mein scrape honge: {keywords_to_scrape}")
+            
+            # ---- PARALLEL SCRAPING (THE PRODUCERS) ----
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {}
                 
-                # Baaki keywords DB se unique nikalo
-                remaining_pool = list(ALL_KEYWORDS_SET - used_keywords - set(keywords_to_scrape))
-                if not remaining_pool:
-                    used_keywords.clear()
-                    remaining_pool = list(ALL_KEYWORDS_SET - set(keywords_to_scrape))
-                
-                random.shuffle(remaining_pool)
-                while len(keywords_to_scrape) < keywords_per_round and remaining_pool:
-                    keywords_to_scrape.append(remaining_pool.pop(0))
-                
-                print(f"📋 Is attempt mein scrape honge: {keywords_to_scrape}")
-                
-                # Har keyword ke liye scrape karo
-                for kw_index, final_search_keyword in enumerate(keywords_to_scrape):
-                    if deals_sent_this_round >= 2:
-                        break  # 2 deals ho gayi, ruk jao
-                    
-                    print(f"\n  🔍 [{kw_index+1}/{len(keywords_to_scrape)}] Keyword: '{final_search_keyword}'")
-                    
-                    target_discount = None
-                    matched_category = None
-
-                    for category, data in MARKET_DATA.items():
-                        if final_search_keyword in data["keywords"]:
-                            target_discount = data["min_discount"]
-                            matched_category = category
+                for idx, kw in enumerate(keywords_to_scrape):
+                    # Find matching category for this keyword
+                    matched_cat = None
+                    matched_discount = 60
+                    for cat_name, data in MARKET_DATA.items():
+                        if kw in data['keywords']:
+                            matched_cat = cat_name
+                            matched_discount = data['min_discount']
                             break
                     
-                    # Agar exact match nahi mila toh partial match try karo
-                    if target_discount is None:
-                        for category, data in MARKET_DATA.items():
-                            if any(keyword in final_search_keyword for keyword in data["keywords"]): 
-                                target_discount = data["min_discount"]      
-                                matched_category = category
+                    # Partial match fallback
+                    if matched_cat is None:
+                        for cat_name, data in MARKET_DATA.items():
+                            if any(keyword in kw for keyword in data['keywords']):
+                                matched_cat = cat_name
+                                matched_discount = data['min_discount']
                                 break
-
-                    # 🛡️ HOSTING FIX: Agar target_discount None reh gaya (koi match nahi mila)
-                    if target_discount is None:
-                        target_discount = 60  # Safe default
-
-                    print(f"  📊 Match: {matched_category.upper() if matched_category else 'GENERAL'} (Min {target_discount}% Off)")
-
-                    target_url = build_flipkart_url(final_search_keyword, min_discount=target_discount) 
-                    deals = get_flipkart_deals(target_url, required_discount=target_discount)
-                
-                    if deals:
-                        random.shuffle(deals)
-                        for deal in deals:
-                            try:
-                                if is_link_already_sent(deal['link']):
-                                    print(f"🔁 Repeat skipped: {deal['title']}")
-                                    continue
-                                if deals_sent_this_round >= 2:
-                                    break
-                                    
-                                final_affiliate_link = get_affiliate_link(deal['link'])
-                                
-                                message = f"""🔥 <b>HOT DEAL | Verified  ✅</b>
-
-🛍️ {deal['title']}
-
-💰 <b>MRP : </b> <del>{deal['mrp']}</del>
-💸 <b>Deal Price : </b> {deal['price']}
-📉 <b>Flat {deal['discount']}</b>
-
-👉 <b>Check price on Flipkart: 👇</b> 
-{final_affiliate_link}
-
-⭐ <b>Rating : </b> {deal['rating']}
-📝 <b>Product Highlights:</b>
-{deal['highlights']}
-⚡ Limited time deal
-⏳ Stock fast finish hota hai!"""
-                                
-                                try:
-                                    channels = db_manager.get_all_channels()
-                                except Exception as e:
-                                    print(f"❌ Channel DB Error: {e}")
-                                    channels = []
-                                    
-                                if not channels:
-                                    print("⚠️ Warning: Koi channel add nahi hai!")
-                                else:
-                                    for channel in channels:
-                                        try:
-                                            send_telegram_message(message, image_url=deal.get('image'), chat_id=channel[0])
-                                        except Exception as e:
-                                            print(f"❌ Telegram send error (channel {channel[0]}): {e}")
-                            
-                                try:
-                                    db_manager.save_deal(
-                                        title=deal['title'],
-                                        original_link=deal['link'],
-                                        affiliate_link=final_affiliate_link,
-                                        category=matched_category if matched_category else "GENERAL"
-                                    )
-                                except Exception as e:
-                                    print(f"⚠️ Deal save error: {e}")
-
-                                used_keywords.add(final_search_keyword) 
-                                deals_sent_this_round += 1 
-                                
-                                # 🛑 ANTI-BAN DELAY (Admin Controlled)
-                                try:
-                                    delay_post = int(db_manager.get_setting('DELAY_POST', 5))
-                                except Exception:
-                                    delay_post = 5
-                                time.sleep(delay_post) 
-                            except KeyError as e:
-                                print(f"⚠️ Deal data incomplete (missing key: {e}), skip...")
-                                continue
-                    else:
-                        used_keywords.add(final_search_keyword)  # Empty result bhi mark karo taaki repeat na ho
                     
-                    # Keywords ke beech chhota delay (anti-ban)
-                    if kw_index < len(keywords_to_scrape) - 1:
-                        time.sleep(2)
+                    if matched_cat is None:
+                        matched_discount = 60
+                    
+                    kw_settings = {
+                        'min_discount': matched_discount,
+                        'min_buyers_count': min_buyers,
+                        'max_pages': max_pages,
+                        'category_name': matched_cat or 'GENERAL',
+                        'priority_weight': category_priority_map.get(matched_cat, 2),
+                        'post_format': category_format_map.get(matched_cat, 'hot_deal'),
+                        'allow_missing_buyers': allow_missing,
+                    }
+                    
+                    # Staggered start — 2-4 sec gap between scrapers (anti-ban)
+                    if idx > 0:
+                        stagger = random.uniform(2, 4)
+                        print(f"  ⏳ Staggered start: {stagger:.1f}s wait before '{kw}'...")
+                        time.sleep(stagger)
+                    
+                    print(f"\n🔍 [{idx+1}/{len(keywords_to_scrape)}] Submitting: '{kw}' (Cat={matched_cat or 'GENERAL'}, Min={matched_discount}%)")
+                    
+                    future = executor.submit(
+                        scrape_keyword_full,
+                        kw,
+                        kw_settings,
+                        deal_queue,
+                        is_link_already_sent,
+                    )
+                    futures[future] = kw
                 
-                if deals_sent_this_round < 2:
-                    current_attempt += 1
-                    # 🛑 RETRY DELAY (Admin Controlled)
+                # Wait for all scrapers to finish
+                for future in as_completed(futures):
+                    kw = futures[future]
                     try:
-                        delay_retry = int(db_manager.get_setting('DELAY_RETRY', 9))
-                    except Exception:
-                        delay_retry = 9
-                    time.sleep(delay_retry) 
+                        future.result()
+                        used_keywords.add(kw)
+                        print(f"✅ Scraper done: '{kw}'")
+                    except Exception as e:
+                        print(f"❌ Scraper error ({kw}): {e}")
+                        used_keywords.add(kw)  # Mark as used even on error
+            
+            # Save used keywords to DB
+            with _db_lock:
+                db_manager.update_setting('used_keywords', ','.join(used_keywords))
             
             is_live_trend_round = not is_live_trend_round
-            round_in_hour += 1 
-
-        except Exception as e:
-            print(f"❌ Error: {e}")
+            round_in_hour += 1
             
+            print(f"\n📊 Queue size after round: {deal_queue.qsize()} deals pending")
+            
+        except Exception as e:
+            print(f"❌ Main loop error: {e}")
+        
         # ==========================================
-        # ⏰ DYNAMIC TIMING LOGIC (Admin Controlled)
+        # ⏰ WAIT PERIOD (with Flash Sale checks)
         # ==========================================
         try:
             round_wait = int(db_manager.get_setting('ROUND_WAIT', 15))
@@ -483,47 +549,37 @@ def run_bot():
         except Exception:
             long_sleep = 60
         try:
-            flash_interval = int(db_manager.get_setting('FLASH_INTERVAL', 3))
+            flash_interval = max(1, int(db_manager.get_setting('FLASH_INTERVAL', 3)))
         except Exception:
             flash_interval = 3
-
-        # 🛡️ HOSTING FIX: Zero division protection
-        if flash_interval <= 0:
-            flash_interval = 3
-
+        
         if round_in_hour < 4:
-            wait_minutes = round_wait 
-            print(f"\n⏳ Round {round_in_hour}/4 complete. Bot agle {wait_minutes} minute tak FLASH SALES track karega...")
+            wait_minutes = max(1, round_wait)
+            print(f"\n⏳ Round {round_in_hour}/4 complete. {wait_minutes} min wait. Flash check har {flash_interval} min...")
         else:
-            wait_minutes = long_sleep
-            round_in_hour = 0 
-            print(f"\n😴 4 Round quota poora! Bot agle {wait_minutes} min tak sirf FLASH SALES dekhega...")
-
-        # 🛡️ HOSTING FIX: Agar wait_minutes somehow 0 ya negative aaye
-        if wait_minutes <= 0:
-            wait_minutes = 15
-            
+            wait_minutes = max(1, long_sleep)
+            round_in_hour = 0
+            print(f"\n😴 4 Round quota poora! {wait_minutes} min wait. Flash check har {flash_interval} min...")
+        
         # 🟢 THE FLASH SALE LOOP WITH INSTANT STOP
         cycles = (wait_minutes * 60) // 10  # 10 second ke chote gaps
         
-        print(f"⏳ Waiting for {wait_minutes} minutes. Checking for Stop signal every 10s...")
-        
         for i in range(cycles):
             try:
-                # Har 10 second mein check karo ki Admin ne STOP toh nahi dabaya
                 if db_manager.get_setting('bot_status', 'ON') == 'OFF':
-                    break # Loop se bahar niklo turant
+                    break
             except Exception:
-                pass  # 🛡️ DB error pe loop mat todo
-                
+                pass
+            
             time.sleep(10)
             
-            # Har X minute (Admin set) par flash sales check karo
+            # Har X minute par flash sales check karo
             try:
                 if (i * 10) % (flash_interval * 60) == 0 and i != 0:
-                    check_flash_sales()
+                    check_flash_sales(deal_queue)
             except Exception as e:
-                print(f"⚠️ Flash sale check error in loop: {e}")
+                print(f"⚠️ Flash sale check error: {e}")
+
 
 if __name__ == "__main__":
     try:
@@ -533,12 +589,10 @@ if __name__ == "__main__":
         print("💡 Check file permissions on the server.")
     
     # 🚨 KOYEB FIX: Dashboard aur Bot ko sath chalane ke liye
-    import threading
     from dashboard.app import app
     
     print("🌐 Starting Dashboard on Port 8000...")
     
-    # 🛡️ HOSTING FIX: Dashboard crash se bot band nahi hoga
     def start_dashboard():
         try:
             app.run(host='0.0.0.0', port=8000)
@@ -550,7 +604,7 @@ if __name__ == "__main__":
     
     time.sleep(5)
     
-    # 🛡️ MASTER SAFETY: Bot kabhi band nahi hoga, chahe koi bhi error aaye
+    # 🛡️ MASTER SAFETY: Bot kabhi band nahi hoga
     while True:
         try:
             run_bot()

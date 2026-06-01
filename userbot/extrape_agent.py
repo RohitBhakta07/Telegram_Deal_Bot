@@ -11,30 +11,47 @@ if parent_dir not in sys.path:
 
 # 🛡️ Config se API Keys aur Session ka fixed raasta uthana
 from config import API_ID, API_HASH, SESSION_PATH
-from telethon import TelegramClient
-
-EXTRAPE_BOT_USERNAME = '@ExtraPeBot' 
-
-# ✅ CRITICAL HOSTING FIX: Ab session file server par hamesha ek hi jagah rahegi
 try:
-    client = TelegramClient(SESSION_PATH, API_ID, API_HASH)
-except Exception as e:
-    print(f"⚠️ Telethon Client init error: {e}")
-    client = None
+    from telethon import TelegramClient
+except Exception:
+    TelegramClient = None
+
+EXTRAPE_BOT_USERNAME = '@ExtraPeBot'
+
+# Ensure session directory exists and use a session file path
+try:
+    if SESSION_PATH and not os.path.exists(SESSION_PATH):
+        os.makedirs(SESSION_PATH, exist_ok=True)
+    session_file = SESSION_PATH if os.path.isfile(SESSION_PATH) else os.path.join(SESSION_PATH, 'extrape.session')
+except Exception:
+    session_file = SESSION_PATH or 'extrape.session'
+
+client = None
+if TelegramClient is not None:
+    try:
+        client = TelegramClient(session_file, API_ID, API_HASH)
+    except Exception as e:
+        print(f"⚠️ Telethon Client init error: {e}")
+        client = None
+else:
+    print("⚠️ Telethon not installed. userbot features disabled.")
 
 async def get_extrape_link(original_link):
     """
     Link bhejega aur specifically ExtraPe ke naye reply ka wait karega.
     """
-    # 🛡️ HOSTING FIX: Agar client init nahi hua toh seedha original link return karo
+    # 🛡️ HOSTING FIX: Agar client init nahi hua ya authorized nahi hai toh seedha original link return karo
     if client is None:
         print("⚠️ Telethon client not initialized. Returning original link.")
         return original_link
         
     try:
-        # 🚀 Server par connection open/close check karne ka safe tareeka
         if not client.is_connected():
             await client.connect()
+
+        if not await client.is_user_authorized():
+            print("⚠️ Userbot is NOT authorized. Fallback to original link.")
+            return original_link
 
         print(f"🕵️‍♂️ Agent: Sending link and waiting for reply...")
         
@@ -87,19 +104,32 @@ def get_sync_link(original_link):
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
-            # "There is no current event loop in thread" — naya banao
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
+        async def run_async_safe():
+            try:
+                if not client.is_connected():
+                    await client.connect()
+                
+                # Check authorization without prompting
+                if not await client.is_user_authorized():
+                    print("⚠️ [Telethon] Userbot is NOT authorized! Fallback to backup URL.")
+                    return original_link
+                
+                return await get_extrape_link(original_link)
+            except Exception as e:
+                print(f"❌ Userbot async authorization / run error: {e}")
+                return original_link
+            
         if loop.is_running():
-            # Agar loop pehle se chal raha hai (jaise Jupyter ya async server par)
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                result = pool.submit(asyncio.run, get_extrape_link(original_link)).result(timeout=90)
+                result = pool.submit(asyncio.run, run_async_safe()).result(timeout=90)
             return result
             
-        with client:
-            return client.loop.run_until_complete(get_extrape_link(original_link))
+        return loop.run_until_complete(run_async_safe())
+        
     except Exception as e:
         print(f"❌ Sync Link Error: {e}")
         return original_link

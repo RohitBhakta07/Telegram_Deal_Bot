@@ -117,6 +117,106 @@
                 </div>
             </section>
 
+            <section
+                class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-violet-500/30 shadow-sm">
+                <div class="flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <span class="material-symbols-outlined text-violet-500">forum</span>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Telegram Post Format</h3>
+                </div>
+                <p class="text-xs text-slate-400 mb-4">Default for normal bot posts. Per-category override on Categories page.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Main format (regular deals)</label>
+                        <select name="default_post_format"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none">
+                            <option value="hot_deal" {% if default_post_format=='hot_deal' %}selected{% endif %}>Format 1 — HOT DEAL (Verified + Rating)</option>
+                            <option value="mega_loot" {% if default_post_format=='mega_loot' %}selected{% endif %}>Format 2 — MEGA LOOT (Urgent)</option>
+                        </select>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Flash sniper format</label>
+                        <select name="flash_post_format"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none">
+                            <option value="mega_loot" {% if flash_post_format=='mega_loot' %}selected{% endif %}>Format 2 — MEGA LOOT (recommended)</option>
+                            <option value="hot_deal" {% if flash_post_format=='hot_deal' %}selected{% endif %}>Format 1 — HOT DEAL</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <section
+                class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-amber-500/30 shadow-sm">
+                <div class="flex items-center gap-2 mb-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <span class="material-symbols-outlined text-amber-500">photo_camera</span>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Price Tag Screenshot</h3>
+                </div>
+                <p class="text-xs text-slate-400 mb-4">
+                    ON = <b>2 photos</b> Telegram par: (1) product photo + (2) Flipkart price tag screenshot.
+                    Setting <b>database mein save</b> hoti hai — bot restart ke baad bhi same rahegi (Save All Settings zaroor dabao).
+                    Har deal par ~10–20 sec extra. Fail hone par sirf product photo.
+                </p>
+                <div class="flex flex-col gap-2 max-w-md">
+                    <label class="text-sm font-semibold text-slate-500">Price screenshot on posts</label>
+                    <select name="price_screenshot"
+                        class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none focus:border-amber-500">
+                        <option value="OFF" {% if price_screenshot != 'ON' %}selected{% endif %}>OFF — Product photo only (faster)</option>
+                        <option value="ON" {% if price_screenshot == 'ON' %}selected{% endif %}>ON — Price tag screenshot (more trust)</option>
+                    </select>
+                </div>
+            </section>
+
+            <section
+                class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-violet-500/30 shadow-[0_0_15px_rgba(139,92,246,0.05)]">
+                <div class="flex items-center gap-2 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <span class="material-symbols-outlined text-violet-500">layers</span>
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">V2 Parallel Scraper & Priority Queue</h3>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Minimum Buyers Count (deep check)</label>
+                        <p class="text-xs text-slate-400 mb-1">Product page visit karke extract kiya hua min ratings/buyers count (default: 1000).</p>
+                        <input name="min_buyers_count" value="{{ min_buyers_count }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-violet-500 outline-none"
+                            type="number" min="0">
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Max Scrape Pages per Keyword</label>
+                        <p class="text-xs text-slate-400 mb-1">Agar criteria wali deal na mile, toh keyword ke maximum kitne pages check kare (default: 3).</p>
+                        <input name="max_scrape_pages" value="{{ max_scrape_pages }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-violet-500 outline-none"
+                            type="number" min="1" max="5">
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Parallel Workers (MAX_WORKERS)</label>
+                        <p class="text-xs text-slate-400 mb-1">Ek saath kitne keywords parallel scrape hon (default: 2). CPU/RAM ke anusaar badhayein.</p>
+                        <input name="max_workers" value="{{ max_workers }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-violet-500 outline-none"
+                            type="number" min="1" max="6">
+                    </div>
+
+                    <div class="flex flex-col gap-2">
+                        <label class="text-sm font-semibold text-slate-500">Queue Delay Post (Seconds)</label>
+                        <p class="text-xs text-slate-400 mb-1">Queue se uthakar Telegram par post karne ke beech ka break (default: 15). Telegram spam safety.</p>
+                        <input name="queue_delay_post" value="{{ queue_delay_post }}"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-bold text-violet-500 outline-none"
+                            type="number" min="1">
+                    </div>
+
+                    <div class="flex flex-col gap-2 md:col-span-2">
+                        <label class="text-sm font-semibold text-slate-500">Allow Missing Buyers</label>
+                        <p class="text-xs text-slate-400 mb-1">Agar kisi naye/unrated product par buyers count (ratings) na mile, toh kya use allow karna hai?</p>
+                        <select name="allow_missing_buyers"
+                            class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none focus:border-violet-500">
+                            <option value="OFF" {% if allow_missing_buyers != 'ON' %}selected{% endif %}>OFF — Skip product if buyers count is missing (recommended)</option>
+                            <option value="ON" {% if allow_missing_buyers == 'ON' %}selected{% endif %}>ON — Accept product if buyers count is missing</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
             <div class="flex justify-end pt-4">
                 <button type="submit"
                     class="gradient-accent text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all">

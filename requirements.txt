@@ -5,3 +5,6 @@ telethon
 pytrends
 pandas
 psutil
+pytest
+python-dotenv
+apscheduler

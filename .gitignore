@@ -12,6 +12,7 @@ database/bot_data.db
 userbot/extrape_session.session
 userbot/extrape_session.session-journal
 bot.log
+temp_screenshots/
 *.session
 *.session-journal
 

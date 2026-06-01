@@ -8,11 +8,19 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
+# load environment from .env (overrides DB settings when present)
 from database.db_manager import get_setting
 
 # 3. 🚀 Database se Settings uthana (Safe version)
+from dotenv import load_dotenv
+load_dotenv(os.path.join(BASE_DIR, '.env'))
+
 def safe_get(key, default=""):
     try:
+        # Prefer environment variables, then DB, then default
+        val = os.getenv(key)
+        if val:
+            return val
         val = get_setting(key)
         return val if val else default
     except:
