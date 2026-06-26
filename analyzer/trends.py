@@ -1,6 +1,7 @@
 import urllib.parse
 import random
 import time
+import threading
 from pytrends.request import TrendReq
 
 # ==========================================
@@ -12,20 +13,29 @@ cached_matched_products = []
 
 # Pichle bheje gaye products ki history (Taki repeat na hon)
 recent_history = []
+
+# 🛡️ SECURITY: Thread-safe lock for all cache access (multiple scrapers can call this in parallel)
+_trends_lock = threading.Lock()
 # ==========================================
 
 def get_current_trend(vip_products_list):
     """
     Google Trends API + Smart Caching + Anti-Ban (User-Agent) + Memory Filter
+    Thread-safe — uses _trends_lock to prevent race conditions when multiple scrapers call in parallel.
     """
     global last_fetch_time, cached_matched_products, recent_history
     current_time = time.time()
     
     # 🟢 STEP 1 (Cache Check): Agar 6 ghante nahi hue hain, toh Google ke paas mat jao
-    if (current_time - last_fetch_time) < CACHE_DURATION and cached_matched_products:
-        print("⚡ CACHE se trend nikal rahe hain (API bacha rahe hain)...")
-        options = cached_matched_products
-    else:
+    with _trends_lock:
+        if (current_time - last_fetch_time) < CACHE_DURATION and cached_matched_products:
+            print("⚡ CACHE se trend nikal rahe hain (API bacha rahe hain)...")
+            options = list(cached_matched_products)
+            _cached_result = True
+        else:
+            _cached_result = False
+    
+    if not _cached_result:
         print("🌐 Google Trends se NAYA LIVE Market Data nikal rahe hain...")
         matched_products = []
         try:
@@ -53,35 +63,38 @@ def get_current_trend(vip_products_list):
                         if vip_product.lower() in live_trend:
                             matched_products.append(vip_product)
             
-            if matched_products:
-                # Naye data ko Cache mein save kar lo
-                cached_matched_products = matched_products
-                last_fetch_time = current_time
-                options = matched_products
-            else:
-                options = vip_products_list
+            with _trends_lock:
+                if matched_products:
+                    # Naye data ko Cache mein save kar lo
+                    cached_matched_products = list(matched_products)
+                    last_fetch_time = current_time
+                    options = matched_products
+                else:
+                    options = list(vip_products_list)
                 
         except Exception as e:
             print(f"⚠️ Google Trends Error (Ignore it): {e}")
-            if cached_matched_products:
-                options = cached_matched_products
-            else:
-                options = vip_products_list
+            with _trends_lock:
+                if cached_matched_products:
+                    options = list(cached_matched_products)
+                else:
+                    options = list(vip_products_list)
 
     # 🟢 STEP 2 (REPEAT ROKNE KA LOGIC): History check karo
-    available_options = [p for p in options if p not in recent_history]
-    
-    # Agar saare options history mein aa chuke hain, toh history clear kar do
-    if not available_options:
-        recent_history.clear()
-        available_options = options
+    with _trends_lock:
+        available_options = [p for p in options if p not in recent_history]
         
-    selected_trend = random.choice(available_options)
-    
-    # History mein is naye trend ko add karo
-    recent_history.append(selected_trend)
-    if len(recent_history) > 5: # Sirf pichle 5 yaad rakho
-        recent_history.pop(0)
+        # Agar saare options history mein aa chuke hain, toh history clear kar do
+        if not available_options:
+            recent_history.clear()
+            available_options = list(options)
+            
+        selected_trend = random.choice(available_options)
+        
+        # History mein is naye trend ko add karo
+        recent_history.append(selected_trend)
+        if len(recent_history) > 5: # Sirf pichle 5 yaad rakho
+            recent_history.pop(0)
         
     print(f"📈 Final Trend Pakda: '{selected_trend}'")
     return selected_trend

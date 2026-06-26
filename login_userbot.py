@@ -7,6 +7,13 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
+# 🛡️ SECURITY: Production guard — prevents accidental execution on live server
+_PRODUCTION_SENTINEL = os.path.join(BASE_DIR, '.production')
+if os.path.isfile(_PRODUCTION_SENTINEL):
+    print("❌ PRODUCTION GUARD: login_userbot.py should NOT be run on a live server.")
+    print("   Remove the .production file to bypass this guard.")
+    sys.exit(1)
+
 from config import API_ID, API_HASH, SESSION_PATH
 
 try:

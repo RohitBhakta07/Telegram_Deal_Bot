@@ -1,9 +1,56 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, abort
 from functools import wraps
 import sys
 import os
 import psutil
 import threading
+import time as time_module
+import secrets
+import logging
+
+# 🛡️ SECURITY: Set up audit log for auth events
+auth_logger = logging.getLogger('dashboard_auth')
+auth_logger.setLevel(logging.INFO)
+_auth_handler = logging.FileHandler(
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'auth_audit.log'),
+    encoding='utf-8'
+)
+_auth_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+auth_logger.addHandler(_auth_handler)
+auth_logger.propagate = False
+
+# 🛡️ SECURITY: In-memory rate limiter (login brute-force protection)
+_rate_limit_store = {}  # {ip: [timestamp1, timestamp2, ...]}
+
+def _is_rate_limited(ip_key, max_attempts=5, window_seconds=60):
+    """Return True if IP has exceeded max login attempts in the time window."""
+    now = time_module.time()
+    if ip_key not in _rate_limit_store:
+        _rate_limit_store[ip_key] = []
+    timestamps = _rate_limit_store[ip_key]
+    timestamps[:] = [t for t in timestamps if now - t < window_seconds]
+    if len(timestamps) >= max_attempts:
+        return True
+    timestamps.append(now)
+    return False
+
+# 🛡️ SECURITY: CSRF token management
+def generate_csrf_token():
+    if 'csrf_token' not in session:
+        session['csrf_token'] = secrets.token_hex(32)
+    return session['csrf_token']
+
+def csrf_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if request.method == 'POST':
+            token = request.form.get('csrf_token') or request.headers.get('X-CSRF-Token')
+            stored = session.get('csrf_token')
+            if not stored or not token or not secrets.compare_digest(stored, token):
+                auth_logger.warning(f"CSRF violation attempt from {request.remote_addr}")
+                return jsonify({"status": "error", "message": "CSRF validation failed. Please refresh and try again."}), 403
+        return f(*args, **kwargs)
+    return decorated
 
 # Database file path setup
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -15,6 +62,15 @@ from database import db_manager
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24).hex())
 app.permanent_session_lifetime = __import__('datetime').timedelta(minutes=30)
+# 🛡️ SECURITY: Session cookie hardening
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# ⚠️ Set SESSION_COOKIE_SECURE=True if using HTTPS (requires SSL certificate)
+
+# 🛡️ SECURITY: Inject CSRF token into all templates
+@app.context_processor
+def inject_csrf():
+    return dict(csrf_token=generate_csrf_token)
 
 # 🔒 LOGIN REQUIRED DECORATOR — har protected route ke upar lagega
 def login_required(f):
@@ -22,6 +78,13 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if not session.get('logged_in'):
             return redirect(url_for('login'))
+        # 🛡️ SECURITY: Enforce session timeout (max 30 min inactivity)
+        last_time = session.get('last_activity')
+        now = time_module.time()
+        if last_time and (now - last_time) > 1800:
+            session.clear()
+            return redirect(url_for('login'))
+        session['last_activity'] = now
         return f(*args, **kwargs)
     return decorated_function
 
@@ -33,6 +96,13 @@ def login():
     
     error = None
     if request.method == 'POST':
+        # 🛡️ SECURITY: Rate limiting by IP
+        client_ip = request.remote_addr or 'unknown'
+        if _is_rate_limited(f"login:{client_ip}"):
+            auth_logger.warning(f"Rate limit hit for {client_ip}")
+            error = "❌ Too many attempts. Please wait 60 seconds."
+            return render_template('login.html', error=error)
+        
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         
@@ -40,11 +110,17 @@ def login():
             session.permanent = True
             session['logged_in'] = True
             session['username'] = username
+            session['login_time'] = time_module.time()
+            # Regenerate CSRF token on login
+            session['csrf_token'] = secrets.token_hex(32)
+            auth_logger.info(f"Successful login: {username} from {client_ip}")
             print(f"🔒 Admin Login: {username}")
             return redirect(url_for('index'))
         else:
+            auth_logger.warning(f"Failed login attempt: user='{username}' from {client_ip}")
             error = "❌ Wrong Username ya Password!"
     
+    session['csrf_token'] = generate_csrf_token()
     return render_template('login.html', error=error)
 
 @app.route('/logout')
@@ -52,8 +128,24 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+@app.route('/health')
+def health():
+    """🛡️ Monitoring endpoint — returns bot health status without auth."""
+    db_ok = False
+    try:
+        db_manager.get_setting('bot_status')
+        db_ok = True
+    except Exception:
+        pass
+    return jsonify({
+        "status": "ok" if db_ok else "degraded",
+        "database": "connected" if db_ok else "error",
+        "timestamp": time_module.time(),
+    })
+
 @app.route('/change_password', methods=['POST'])
 @login_required
+@csrf_required
 def change_password():
     old_pass = request.form.get('old_password', '')
     new_pass = request.form.get('new_password', '')
@@ -129,6 +221,7 @@ def settings():
 
 @app.route('/save_settings', methods=['POST'])
 @login_required
+@csrf_required
 def save_settings():
     if request.method == 'POST':
         db_manager.update_setting('API_ID', request.form.get('api_id'))
@@ -168,6 +261,7 @@ def channels():
 
 @app.route('/add_channel', methods=['POST'])
 @login_required
+@csrf_required
 def add_channel():
     channel_id = request.form.get('channel_id')
     channel_name = request.form.get('channel_name')
@@ -175,9 +269,21 @@ def add_channel():
         db_manager.add_channel(channel_id, channel_name)
     return redirect(url_for('channels'))
 
-@app.route('/delete_channel/<channel_id>')
+@app.route('/delete_channel/<channel_id>', methods=['GET', 'POST'])
 @login_required
 def delete_channel(channel_id):
+    # 🛡️ SECURITY: Validate channel_id is alphanumeric + dash
+    if not channel_id or any(c not in '-0123456789' for c in channel_id if c != '-'):
+        return jsonify({"status": "error", "message": "Invalid channel ID"}), 400
+    # 🛡️ SECURITY: CSRF check for POST; for GET links validate via query param token
+    if request.method == 'POST':
+        token = request.form.get('csrf_token')
+    else:
+        token = request.args.get('csrf_token')
+    stored = session.get('csrf_token')
+    if not stored or not token or not secrets.compare_digest(stored, token):
+        auth_logger.warning(f"CSRF violation on delete_channel from {request.remote_addr}")
+        return jsonify({"status": "error", "message": "CSRF validation failed"}), 403
     db_manager.delete_channel(channel_id)
     return redirect(url_for('channels'))
 
@@ -192,6 +298,7 @@ def categories():
 
 @app.route('/add_category', methods=['POST'])
 @login_required
+@csrf_required
 def add_category():
     name = request.form.get('name')
     keywords = request.form.get('keywords') 
@@ -202,14 +309,24 @@ def add_category():
         db_manager.add_category(name, keywords, int(min_discount), priority, post_format)
     return redirect(url_for('categories'))
 
-@app.route('/delete_category/<cat_id>')
+@app.route('/delete_category/<cat_id>', methods=['GET', 'POST'])
 @login_required
 def delete_category(cat_id):
+    # 🛡️ SECURITY: CSRF check for GET-based delete
+    if request.method == 'POST':
+        token = request.form.get('csrf_token')
+    else:
+        token = request.args.get('csrf_token')
+    stored = session.get('csrf_token')
+    if not stored or not token or not secrets.compare_digest(stored, token):
+        auth_logger.warning(f"CSRF violation on delete_category from {request.remote_addr}")
+        return jsonify({"status": "error", "message": "CSRF validation failed"}), 403
     db_manager.delete_category(cat_id)
     return redirect(url_for('categories'))
 
 @app.route('/edit_category/<int:cat_id>', methods=['POST'])
 @login_required
+@csrf_required
 def edit_category(cat_id):
     name = request.form.get('name')
     keywords = request.form.get('keywords')
@@ -231,6 +348,7 @@ def flash_deals():
 
 @app.route('/add_flash', methods=['POST'])
 @login_required
+@csrf_required
 def add_flash():
     keyword = request.form.get('keyword')
     min_discount = request.form.get('min_discount')
@@ -239,14 +357,24 @@ def add_flash():
         db_manager.add_flash_keyword(keyword.strip().lower(), int(min_discount))
     return redirect(url_for('flash_deals'))
 
-@app.route('/delete_flash/<int:keyword_id>')
+@app.route('/delete_flash/<int:keyword_id>', methods=['GET', 'POST'])
 @login_required
 def delete_flash(keyword_id):
+    # 🛡️ SECURITY: CSRF check for GET-based delete
+    if request.method == 'POST':
+        token = request.form.get('csrf_token')
+    else:
+        token = request.args.get('csrf_token')
+    stored = session.get('csrf_token')
+    if not stored or not token or not secrets.compare_digest(stored, token):
+        auth_logger.warning(f"CSRF violation on delete_flash from {request.remote_addr}")
+        return jsonify({"status": "error", "message": "CSRF validation failed"}), 403
     db_manager.delete_flash_keyword(keyword_id)
     return redirect(url_for('flash_deals'))
 
 @app.route('/edit_flash/<int:keyword_id>', methods=['POST'])
 @login_required
+@csrf_required
 def edit_flash(keyword_id):
     keyword = request.form.get('keyword')
     min_discount = request.form.get('min_discount')
@@ -265,6 +393,7 @@ def instant_post():
 
 @app.route('/instant_post_send', methods=['POST'])
 @login_required
+@csrf_required
 def instant_post_send():
     """
     Background thread mein product scrape + affiliate generate + Telegram post karega.
@@ -416,6 +545,7 @@ def export_logs():
 
 @app.route('/restart_bot', methods=['POST'])
 @login_required
+@csrf_required
 def restart_bot():
     log_file_path = os.path.join(parent_dir, 'bot.log')
     with open(log_file_path, 'a', encoding='utf-8') as f:
@@ -424,6 +554,7 @@ def restart_bot():
 
 @app.route('/clear_logs', methods=['POST'])
 @login_required
+@csrf_required
 def clear_logs():
     log_file_path = os.path.join(parent_dir, 'bot.log')
     open(log_file_path, 'w').close()
@@ -431,6 +562,7 @@ def clear_logs():
 
 @app.route('/toggle_bot', methods=['POST'])
 @login_required
+@csrf_required
 def toggle_bot():
     current = db_manager.get_setting('bot_status', 'ON')
     new_status = 'OFF' if current == 'ON' else 'ON'

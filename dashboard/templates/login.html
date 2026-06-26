@@ -83,6 +83,7 @@
             {% endif %}
 
             <form method="POST" action="/login">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-5">
                     <label class="block text-sm font-semibold text-slate-300 mb-2">Username</label>
                     <div class="relative">

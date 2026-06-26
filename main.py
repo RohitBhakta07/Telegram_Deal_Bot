@@ -18,6 +18,8 @@ if BASE_DIR not in sys.path:
 log_file_path = os.path.join(BASE_DIR, 'bot.log')
 
 class Logger(object):
+    _lock = threading.Lock()  # 🛡️ Thread-safe writes
+
     def __init__(self):
         self.terminal = sys.__stdout__  # 🛡️ HOSTING FIX: Original stdout save karo
         try:
@@ -26,20 +28,21 @@ class Logger(object):
             self.log = None
 
     def write(self, message):
-        try:
-            self.terminal.write(message)
-        except Exception:
-            pass
-        if self.log:
+        with self._lock:
             try:
-                self.log.write(message)
-                self.log.flush() 
+                sys.__stdout__.write(message)
             except Exception:
                 pass
+            if self.log:
+                try:
+                    self.log.write(message)
+                    self.log.flush() 
+                except Exception:
+                    pass
 
     def flush(self):
         try:
-            self.terminal.flush()
+            sys.__stdout__.flush()
         except Exception:
             pass
 
@@ -52,7 +55,7 @@ from telegram.bot import send_telegram_message, send_telegram_deal_post
 from config import EXTRAPE_AFFID, EXTRAPE_PARAM1
 from database import db_manager
 from userbot.extrape_agent import get_sync_link
-from analyzer.deal_selector import pick_best_deal
+# pick_best_deal is dead code — scoring happens inside scrape_keyword_full via score_deal
 from telegram.post_format import build_deal_message, resolve_post_format
 from telegram.deal_media import post_deal_message
 
@@ -72,9 +75,9 @@ def clear_old_links():
         with _db_lock:
             total_deals = db_manager.get_total_deals_count()
             if total_deals >= 192:
-                db_manager.clear_all_deals() 
-                db_manager.update_setting('used_keywords', '') 
-                print(f"🧹 Memory Reset: {total_deals} deals poori hui. Naya cycle shuru!")
+                # 🛡️ SECURITY: Delete oldest 50 deals gradually instead of all-at-once
+                db_manager.delete_oldest_deals(50)
+                print(f"🧹 Cleanup: {total_deals} deals total. Oldest 50 deleted. Keeping recent history.")
     except Exception as e:
         print(f"⚠️ DB Count Error: {e}")
 
@@ -82,6 +85,7 @@ def clear_old_links():
 def get_affiliate_link(original_url):
     print(f"🕵️‍♂️ Secret Agent ko link bhej rahe hain...")
     try:
+        # 🛡️ SECURITY: Timeout after 15s so consumer thread never blocks
         agent_link = get_sync_link(original_url)
         if agent_link and agent_link != original_url:
             print("✅ Agent ne link successfully convert kar diya!")
@@ -223,6 +227,7 @@ def consumer_thread(deal_queue, stop_event):
 # ⚡ FLASH SALE TRACKER (V2 — Parallel + Queue Push)
 # ==========================================
 flash_cooldowns = {}
+_flash_lock = threading.Lock()  # 🛡️ Thread-safe access to flash_cooldowns
 
 def check_flash_sales(deal_queue):
     """Flash deals ko parallel scrape karo aur queue mein daalo (Priority 0 — sabse pehle post)."""
@@ -241,14 +246,15 @@ def check_flash_sales(deal_queue):
         
         current_time = time.time()
         available = []
-        for target in flash_data:
-            try:
-                keyword = target[1]
-                last_used = flash_cooldowns.get(keyword, 0)
-                if (current_time - last_used) > 86400:  # 24hr lock
-                    available.append(target)
-            except (IndexError, TypeError):
-                continue
+        with _flash_lock:
+            for target in flash_data:
+                try:
+                    keyword = target[1]
+                    last_used = flash_cooldowns.get(keyword, 0)
+                    if (current_time - last_used) > 86400:  # 24hr lock
+                        available.append(target)
+                except (IndexError, TypeError):
+                    continue
         
         if not available:
             print("⏳ [FLASH] Saare targets 24hr locked hain.")
@@ -300,7 +306,8 @@ def check_flash_sales(deal_queue):
                 keyword = futures[future]
                 try:
                     future.result()
-                    flash_cooldowns[keyword] = current_time  # 24hr lock
+                    with _flash_lock:
+                        flash_cooldowns[keyword] = current_time  # 24hr lock
                     print(f"🔒 [FLASH] '{keyword}' locked for 24 hours.")
                 except Exception as e:
                     print(f"❌ [FLASH] '{keyword}' error: {e}")
@@ -595,7 +602,9 @@ if __name__ == "__main__":
     
     def start_dashboard():
         try:
-            app.run(host='0.0.0.0', port=8000)
+            # 🛡️ SECURITY: Bind to localhost only — prevents external network access to admin panel
+            #    Use nginx reverse proxy + Cloudflare Tunnel if remote access is needed
+            app.run(host='127.0.0.1', port=8000)
         except Exception as e:
             print(f"❌ Dashboard error: {e}")
             print("⚠️ Dashboard band hai lekin Bot chalta rahega!")

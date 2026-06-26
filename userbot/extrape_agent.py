@@ -55,8 +55,8 @@ async def get_extrape_link(original_link):
 
         print(f"🕵️‍♂️ Agent: Sending link and waiting for reply...")
         
-        # Timeout 60 second rakha hai taaki bot hamesha ke liye na atak jaye
-        async with client.conversation(EXTRAPE_BOT_USERNAME, timeout=60) as conv:
+        # 🛡️ SECURITY: Reduced timeout from 60s to 20s so consumer thread never blocks
+        async with client.conversation(EXTRAPE_BOT_USERNAME, timeout=20) as conv:
             # 1. ExtraPe ko message bhejte hain
             await conv.send_message(original_link)
             
@@ -83,7 +83,7 @@ async def get_extrape_link(original_link):
         return original_link
 
     except asyncio.TimeoutError:
-        print("⏳ Timeout: ExtraPe ne 60 sec tak reply nahi diya. Backup chalayenge.")
+        print("⏳ Timeout: ExtraPe ne 20 sec tak reply nahi diya. Backup chalayenge.")
         return original_link
     except ConnectionError:
         print("❌ Telethon Connection Error: Internet ya Telegram server down hai.")
@@ -125,7 +125,7 @@ def get_sync_link(original_link):
         if loop.is_running():
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                result = pool.submit(asyncio.run, run_async_safe()).result(timeout=90)
+                result = pool.submit(asyncio.run, run_async_safe()).result(timeout=30)
             return result
             
         return loop.run_until_complete(run_async_safe())

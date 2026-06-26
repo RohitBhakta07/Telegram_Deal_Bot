@@ -1,25 +1,43 @@
-# Deal Hunter Bot - .gitignore
+# ═══════════════════════════════════════════
+# Deal Hunter Bot — .gitignore
+# ═══════════════════════════════════════════
 
-# Python
+# ── Python ──────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
+*.egg-info/
+dist/
+build/
 venv/
-.env
+.venv/
+.pytest_cache/
 
-# Sensitive Data (NEVER PUSH)
-database/bot_data.db
-userbot/extrape_session.session
-userbot/extrape_session.session-journal
-bot.log
-temp_screenshots/
+# ── Secrets & Credentials (NEVER PUSH) ─────
+.env
 *.session
 *.session-journal
+userbot/extrape_session/
+database/bot_data.db
+*.db-shm
+*.db-wal
+auth_audit.log
 
-# IDE
+# ── Environment / Config ────────────────────
+.production
+
+# ── Runtime Artifacts ───────────────────────
+bot.log
+temp_screenshots/
+
+# ── IDE ─────────────────────────────────────
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# OS
+# ── OS ──────────────────────────────────────
 .DS_Store
 Thumbs.db
+Desktop.ini

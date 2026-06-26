@@ -6,6 +6,7 @@
     <div class="max-w-4xl mx-auto space-y-8">
 
         <form action="/save_settings" method="POST" class="space-y-8">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
             <section
                 class="bg-white dark:bg-[#162128] rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">

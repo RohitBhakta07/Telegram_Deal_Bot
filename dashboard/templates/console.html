@@ -103,13 +103,23 @@
             });
     }
 
+    function getCSRFToken() {
+        return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    }
+
     function restartBot() {
-        fetch('/restart_bot', { method: 'POST' })
+        fetch('/restart_bot', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': getCSRFToken() }
+        })
             .then(() => alert("Restart signal sent! Check logs."));
     }
 
     function clearLogs() {
-        fetch('/clear_logs', { method: 'POST' })
+        fetch('/clear_logs', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': getCSRFToken() }
+        })
             .then(() => logContent.innerHTML = "Logs cleared.");
     }
 

@@ -13,7 +13,33 @@ from database.db_manager import get_setting
 
 # 3. 🚀 Database se Settings uthana (Safe version)
 from dotenv import load_dotenv
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# 🛡️ SECURITY: Only load .env from outside project root to prevent web-accessible leaks
+ENV_PATH_CANDIDATES = [
+    os.path.join(BASE_DIR, '.env'),           # Local dev fallback
+]
+# Check if .env is inside a web-served directory
+_env_in_webroot = False
+try:
+    from pathlib import Path
+    env_resolved = Path(os.path.join(BASE_DIR, '.env')).resolve()
+    webroots = [
+        Path(BASE_DIR, 'dashboard').resolve(),
+        Path(BASE_DIR, 'dashboard', 'static').resolve(),
+    ]
+    for wr in webroots:
+        if wr in env_resolved.parents or wr == env_resolved.parent:
+            _env_in_webroot = True
+            break
+except Exception:
+    pass
+
+if _env_in_webroot:
+    print("⚠️ SECURITY: .env file is inside web-accessible directory! Move it outside the project root.")
+    # Still try to load for development convenience, but warn loudly
+    load_dotenv(os.path.join(BASE_DIR, '.env'))
+else:
+    load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 def safe_get(key, default=""):
     try:

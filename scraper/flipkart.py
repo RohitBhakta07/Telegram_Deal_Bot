@@ -180,7 +180,7 @@ def get_flipkart_deals(search_url, required_discount=60):
                             print(f"Image Error: {e}")
 
                         deal_info = {
-                            "title": title[:50] + "...", 
+                            "title": title[:120] + ("..." if len(title) > 120 else ""),
                             "link": full_link,
                             "image": image_url,
                             "price": "Check Link", 
@@ -254,31 +254,31 @@ def get_flipkart_deals(search_url, required_discount=60):
                         
                         # Pattern 1: Standard — "4.2★ (1,234 Ratings)" ya "4.2 1234 Ratings"
                         if not extracted_rating:
-                            m = re.search(r'([1-4]\.\d|5\.0)\s*(?:★|⭐)?\s*(?:\([\d,\s]+\)|[\d,\s]+Ratings?)', flat_text, re.IGNORECASE)
+                            m = re.search(r'([1-5](?:\.\d{1,2})?)\s*(?:★|⭐)?\s*\([^)]*\)', flat_text, re.IGNORECASE)
                             if m: extracted_rating = m.group(1)
                         
                         # Pattern 2: Reviews format — "4.2 Ratings & 234 Reviews" ya "4.2 & 234 Reviews"
                         if not extracted_rating:
-                            m = re.search(r'([1-4]\.\d|5\.0)\s*(?:★|⭐)?\s*(?:Ratings?\s*)?(?:&|and)\s*[\d,]+\s*Reviews?', flat_text, re.IGNORECASE)
+                            m = re.search(r'([1-5](?:\.\d{1,2})?)\s*(?:★|⭐)?\s*(?:Ratings?\s*)?(?:&|and)\s*[\d,]+\s*Reviews?', flat_text, re.IGNORECASE)
                             if m: extracted_rating = m.group(1)
                         
                         # Pattern 3: Standalone line — puri line mein sirf "4.2" ya "4.2 ★"
                         if not extracted_rating:
                             for line in card_text:
                                 clean_line = line.strip()
-                                m = re.search(r'^([1-4]\.\d|5\.0)\s*(?:★|⭐)?$', clean_line)
+                                m = re.search(r'^([1-5](?:\.\d{1,2})?)\s*(?:★|⭐)?$', clean_line)
                                 if m:
                                     extracted_rating = m.group(1)
                                     break
                         
                         # Pattern 4: "out of 5" format — "4.2 out of 5"
                         if not extracted_rating:
-                            m = re.search(r'([1-4]\.\d|5\.0)\s*out\s*of\s*5', flat_text, re.IGNORECASE)
+                            m = re.search(r'([1-5](?:\.\d{1,2})?)\s*out\s*of\s*5', flat_text, re.IGNORECASE)
                             if m: extracted_rating = m.group(1)
                         
                         # Pattern 5: Flipkart short — "4.2★" kahi bhi text mein
                         if not extracted_rating:
-                            m = re.search(r'([1-4]\.\d|5\.0)\s*[★⭐]', flat_text)
+                            m = re.search(r'([1-5](?:\.\d{1,2})?)\s*[★⭐]', flat_text)
                             if m: extracted_rating = m.group(1)
                         
                         # Pattern 6: Bare decimal — koi bhi 1.0-5.0 number jo price ya % nahi hai
@@ -286,18 +286,23 @@ def get_flipkart_deals(search_url, required_discount=60):
                             # Prices (₹) aur percentages (%) hata ke search karo
                             clean_for_rating = re.sub(r'₹\s*[\d,]+', '', flat_text)
                             clean_for_rating = re.sub(r'\d+\s*%', '', clean_for_rating)
-                            m = re.search(r'(?<!\d)([3-4]\.\d|5\.0)(?!\d)', clean_for_rating)
+                            m = re.search(r'(?<!\d)([3-5](?:\.\d{1,2})?)(?!\d)', clean_for_rating)
                             if m: extracted_rating = m.group(1)
                         
                         # Pattern 7: DOM element direct — Flipkart ke rating class se seedha nikalo
                         if not extracted_rating:
                             try:
-                                rating_selectors = ["div._3LWZlK", "span._1lRcqv", "div.XQDdHH", "span.Y1HWO0"]
+                                rating_selectors = [
+                                    "div._3LWZlK", "span._1lRcqv", "div.XQDdHH", "span.Y1HWO0",
+                                    "div[class*='rating']", "span[class*='rating']",
+                                    "div[class*='Rating']", "span[class*='Rating']",
+                                    "div[class*='star']", "span[class*='star']",
+                                ]
                                 for sel in rating_selectors:
                                     try:
                                         el = card.locator(sel).first
                                         rt = el.inner_text(timeout=2000).strip()
-                                        m = re.search(r'([1-4]\.\d|5\.0)', rt)
+                                        m = re.search(r'([1-5](?:\.\d{1,2})?)', rt)
                                         if m:
                                             extracted_rating = m.group(1)
                                             break
@@ -317,7 +322,7 @@ def get_flipkart_deals(search_url, required_discount=60):
                             # 🧠 SMART CHECK: Sirf tab page kholo jab discount minimum se 20%+ zyada ho
                             # Example: Minimum 60% set hai, product 80%+ discount hai → page kholo
                             # Example: Minimum 60% set hai, product 65% discount hai → skip, time waste mat karo
-                            if temp_discount >= (required_discount + 20):
+                            if temp_discount >= required_discount:
                                 try:
                                     print(f"  🔎 Rating nahi mili lekin discount {temp_discount}% bohut zyada hai! Product page check kar rahe hain...")
                                     product_page = context.new_page()
@@ -327,15 +332,18 @@ def get_flipkart_deals(search_url, required_discount=60):
                                         
                                         # Method A: CSS selectors se rating nikalo
                                         deep_selectors = [
-                                            "div._3LWZlK", "span._1lRcqv", "div.XQDdHH", 
+                                            "div._3LWZlK", "span._1lRcqv", "div.XQDdHH",
                                             "span.Y1HWO0", "div._2d4LTz", "span._1Y-68P",
-                                            "div[class*='rating']", "span[class*='rating']"
+                                            "div[class*='rating']", "span[class*='rating']",
+                                            "div[class*='Rating']", "span[class*='Rating']",
+                                            "div[class*='star']", "span[class*='star']",
+                                            "div[class*='_3LWZl']", "span[class*='Y1HWO']",
                                         ]
                                         for sel in deep_selectors:
                                             try:
                                                 el = product_page.locator(sel).first
                                                 rt = el.inner_text(timeout=2000).strip()
-                                                m = re.search(r'([1-4]\.\d|5\.0)', rt)
+                                                m = re.search(r'([1-5](?:\.\d{1,2})?)', rt)
                                                 if m:
                                                     extracted_rating = m.group(1)
                                                     print(f"  ✅ Product page se rating mili: {extracted_rating}★")
@@ -347,7 +355,7 @@ def get_flipkart_deals(search_url, required_discount=60):
                                         if not extracted_rating:
                                             try:
                                                 page_body = product_page.inner_text("body", timeout=5000)
-                                                m = re.search(r'([1-4]\.\d|5\.0)\s*(?:★|⭐|out\s*of\s*5|Ratings?)', page_body, re.IGNORECASE)
+                                                m = re.search(r'([1-5](?:\.\d{1,2})?)\s*(?:★|⭐|out\s*of\s*5|Ratings?)', page_body, re.IGNORECASE)
                                                 if m:
                                                     extracted_rating = m.group(1)
                                                     print(f"  ✅ Product page se rating mili (text): {extracted_rating}★")
@@ -367,10 +375,10 @@ def get_flipkart_deals(search_url, required_discount=60):
                                 except Exception as e:
                                     print(f"  ⚠️ Deep rating fetch error: {e}")
                             else:
-                                print(f"  ⏩ Rating nahi mili, discount {temp_discount}% minimum ({required_discount}%) ke paas hai. Page visit skip.")
+                                print(f"  ⏩ Rating nahi mili, discount {temp_discount}% minimum ({required_discount}%) se kam hai. Page visit skip.")
                         
                         # --- NEW: Extracting Rating Count ---
-                        count_match_1 = re.search(r'(?:[1-5]\.\d)\s*(?:★|⭐)?\s*\(\s*([\d,]+)\s*\)', flat_text)
+                        count_match_1 = re.search(r'(?:[1-5]\.\d)\s*(?:★|⭐)?\s*\(\s*([\d,]+)\s*[^)]*\)', flat_text)
                         if count_match_1:
                             try:
                                 deal_info["rating_count"] = int(count_match_1.group(1).replace(',', '').strip())
@@ -413,8 +421,10 @@ def get_flipkart_deals(search_url, required_discount=60):
                             deal_info["rating_count"] = current_rating_count  # Jo mila wo store karo
                             if current_rating >= 4.0:
                                 deal_info["rating"] = f"{current_rating}★ ({current_rating_count}+ Ratings)"
-                            else:
+                            elif current_rating > 0.0:
                                 deal_info["rating"] = f"🌟 Bestseller ({current_rating_count}+ Ratings)"
+                            else:
+                                deal_info["rating"] = f"🆕 New / Unrated ({current_rating_count}+ bought)"
                             deal_info["discount"] = f"{current_discount}% Off"
                             deals.append(deal_info)
                             print(f"✅ Stage 1 Pass: {title[:30]}... (Rating={current_rating}★, Discount={current_discount}%)")
@@ -577,7 +587,7 @@ def scrape_single_product(product_url):
                     rating = f"{m_rating.group(1)}★"
                 else:
                     # Fallback
-                    m_rating2 = re.search(r'([1-4]\.\d|5\.0)\s*(?:★|⭐)', page_text)
+                    m_rating2 = re.search(r'([1-5](?:\.\d{1,2})?)\s*(?:★|⭐)', page_text)
                     if m_rating2: rating = f"{m_rating2.group(1)}★"
                 
                 # 6. DISCOUNT
@@ -612,7 +622,7 @@ def scrape_single_product(product_url):
                 except: pass
                 
                 deal_info = {
-                    "title": title[:80] + ("..." if len(title) > 80 else ""),
+                    "title": title[:120] + ("..." if len(title) > 120 else ""),
                     "link": product_url,
                     "image": image_url,
                     "price": price,
@@ -927,7 +937,7 @@ def scrape_keyword_full(keyword, settings, deal_queue, skip_link_fn=None):
                                     pass
                                 
                                 deal_info = {
-                                    "title": title[:50] + "...",
+                                    "title": title[:120] + ("..." if len(title) > 120 else ""),
                                     "link": full_link,
                                     "image": image_url,
                                     "price": "Check Link",
@@ -993,9 +1003,9 @@ def scrape_keyword_full(keyword, settings, deal_queue, skip_link_fn=None):
                                 extracted_rating = None
                                 
                                 for pattern in [
-                                    r'([1-4]\.\d|5\.0)\s*(?:★|⭐)?\s*(?:\([\d,\s]+\)|[\d,\s]+Ratings?)',
-                                    r'([1-4]\.\d|5\.0)\s*(?:★|⭐)?\s*(?:Ratings?\s*)?(?:&|and)\s*[\d,]+\s*Reviews?',
-                                    r'([1-4]\.\d|5\.0)\s*[★⭐]',
+                                    r'([1-5](?:\.\d{1,2})?)\s*(?:★|⭐)?\s*\([^)]*\)',
+                                    r'([1-5](?:\.\d{1,2})?)\s*(?:★|⭐)?\s*(?:Ratings?\s*)?(?:&|and)\s*[\d,]+\s*Reviews?',
+                                    r'([1-5](?:\.\d{1,2})?)\s*[★⭐]',
                                 ]:
                                     m = re.search(pattern, flat_text, re.IGNORECASE)
                                     if m:
@@ -1004,7 +1014,7 @@ def scrape_keyword_full(keyword, settings, deal_queue, skip_link_fn=None):
                                 
                                 if not extracted_rating:
                                     for line in card_text:
-                                        m = re.search(r'^([1-4]\.\d|5\.0)\s*(?:★|⭐)?$', line.strip())
+                                        m = re.search(r'^([1-5](?:\.\d{1,2})?)\s*(?:★|⭐)?$', line.strip())
                                         if m:
                                             extracted_rating = m.group(1)
                                             break
@@ -1012,13 +1022,35 @@ def scrape_keyword_full(keyword, settings, deal_queue, skip_link_fn=None):
                                 if not extracted_rating:
                                     clean_for_rating = re.sub(r'₹\s*[\d,]+', '', flat_text)
                                     clean_for_rating = re.sub(r'\d+\s*%', '', clean_for_rating)
-                                    m = re.search(r'(?<!\d)([3-4]\.\d|5\.0)(?!\d)', clean_for_rating)
+                                    m = re.search(r'(?<!\d)([3-5](?:\.\d{1,2})?)(?!\d)', clean_for_rating)
                                     if m:
                                         extracted_rating = m.group(1)
-                                
+
+                                # Pattern 7: CSS selector fallback for ratings
+                                if not extracted_rating:
+                                    try:
+                                        rating_selectors = [
+                                            "div._3LWZlK", "span._1lRcqv", "div.XQDdHH",
+                                            "span.Y1HWO0", "div[class*='rating']", "span[class*='rating']",
+                                            "div[class*='Rating']", "span[class*='Rating']",
+                                            "div[class*='star']", "span[class*='star']",
+                                        ]
+                                        for sel in rating_selectors:
+                                            try:
+                                                el = card.locator(sel).first
+                                                rt = el.inner_text(timeout=2000).strip()
+                                                m = re.search(r'([1-5](?:\.\d{1,2})?)', rt)
+                                                if m:
+                                                    extracted_rating = m.group(1)
+                                                    break
+                                            except:
+                                                continue
+                                    except:
+                                        pass
+
                                 # Rating count
                                 rating_count = 0
-                                count_m = re.search(r'(?:[1-5]\.\d)\s*(?:★|⭐)?\s*\(\s*([\d,]+)\s*\)', flat_text)
+                                count_m = re.search(r'(?:[1-5]\.\d)\s*(?:★|⭐)?\s*\(\s*([\d,]+)\s*[^)]*\)', flat_text)
                                 if count_m:
                                     try:
                                         rating_count = int(count_m.group(1).replace(',', '').strip())
@@ -1051,6 +1083,10 @@ def scrape_keyword_full(keyword, settings, deal_queue, skip_link_fn=None):
                                     deal_info["rating_count"] = rating_count
                                     if current_rating >= 4.0:
                                         deal_info["rating"] = f"{current_rating}★ ({rating_count}+ Ratings)"
+                                    elif current_rating > 0.0:
+                                        deal_info["rating"] = f"🌟 Bestseller ({rating_count}+ Ratings)"
+                                    else:
+                                        deal_info["rating"] = f"🆕 New / Unrated ({rating_count}+ bought)"
                                     deal_info["discount"] = f"{current_discount}% Off"
                                     raw_deals.append(deal_info)
                                     print(f"    ✅ [{keyword}] Stage 1 Pass: {title[:30]}... (R={current_rating}★, D={current_discount}%)")

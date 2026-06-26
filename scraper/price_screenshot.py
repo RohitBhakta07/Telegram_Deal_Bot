@@ -18,6 +18,12 @@ _PRICE_BLOCK_SELECTORS = [
     "div[class*='vUq9jN']",
     "div[class*='Nx9bqj']",
     "div[class*='C7fE6x']",
+    "div[class*='price']",
+    "div[class*='Price']",
+    "div[class*='_30jeq']",
+    "div[class*='_16Jk6d']",
+    "div[class*='_1kMSn']",
+    "span[class*='_30jeq']",
 ]
 
 
@@ -58,10 +64,10 @@ def capture_price_tag_screenshot(product_url):
                 viewport={"width": 1280, "height": 900},
                 locale="en-IN",
             )
-            context.route("**/*.{css,woff2}", lambda route: route.abort())
+            # context.route("**/*.{css,woff2}", lambda route: route.abort())  # CSS chahiye price render karne ke liye
             page = context.new_page()
             page.goto(product_url, timeout=35000, wait_until="domcontentloaded")
-            time.sleep(2.5)
+            time.sleep(3.5)
 
             captured = False
             for sel in _PRICE_BLOCK_SELECTORS:
@@ -69,7 +75,7 @@ def capture_price_tag_screenshot(product_url):
                     loc = page.locator(sel).first
                     if loc.count() > 0 and loc.is_visible(timeout=2000):
                         box = loc.bounding_box()
-                        if box and box.get("height", 0) > 40:
+                        if box and box.get("height", 0) > 20:
                             loc.screenshot(path=out_path, timeout=10000)
                             captured = True
                             print(f"  [Screenshot] Price block captured ({sel[:30]}...)")
@@ -82,7 +88,7 @@ def capture_price_tag_screenshot(product_url):
                 try:
                     page.screenshot(
                         path=out_path,
-                        clip={"x": 0, "y": 60, "width": 900, "height": 480},
+                        clip={"x": 350, "y": 60, "width": 600, "height": 500},
                         timeout=10000,
                     )
                     captured = True
@@ -128,3 +134,23 @@ def cleanup_screenshot(path):
             os.remove(path)
         except OSError:
             pass
+
+
+def cleanup_old_screenshots(max_age_hours=1):
+    """🛡️ SECURITY: Remove orphaned temp screenshot files older than max_age_hours."""
+    cutoff = time.time() - (max_age_hours * 3600)
+    if not os.path.isdir(SCREENSHOT_DIR):
+        return
+    try:
+        for fname in os.listdir(SCREENSHOT_DIR):
+            fpath = os.path.join(SCREENSHOT_DIR, fname)
+            if fname.startswith('price_') and fname.endswith('.png') and os.path.isfile(fpath):
+                try:
+                    mtime = os.path.getmtime(fpath)
+                    if mtime < cutoff:
+                        os.remove(fpath)
+                        print(f"  [Screenshot] Cleaned old temp: {fname}")
+                except OSError:
+                    pass
+    except OSError:
+        pass

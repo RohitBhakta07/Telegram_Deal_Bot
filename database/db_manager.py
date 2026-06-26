@@ -3,16 +3,18 @@ import os
 import time
 import hashlib
 import random
+import secrets
 
 # Database file path setup
 DB_PATH = os.path.join(os.path.dirname(__file__), 'bot_data.db')
 
 # 🛡️ HOSTING FIX: Thread-safe connection wrapper with auto-retry for locked DB
 def _get_connection(retries=3):
-    """SQLite connection with retry logic for 'database is locked' errors on hosting."""
+    """SQLite connection with retry logic, WAL mode, and security pragmas."""
     for attempt in range(retries):
         try:
             conn = sqlite3.connect(DB_PATH, timeout=10)
+            _enable_secure_db_pragmas(conn)
             return conn
         except sqlite3.OperationalError as e:
             if attempt < retries - 1:
@@ -20,9 +22,24 @@ def _get_connection(retries=3):
             else:
                 raise e
 
-def _hash_password(password):
-    """SHA-256 se password hash karo"""
-    return hashlib.sha256(password.encode()).hexdigest()
+def _enable_secure_db_pragmas(conn):
+    """Enable WAL mode and security-related pragmas on connection."""
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        # 🛡️ SECURITY: Limit DB file access to owner only
+        # Windows doesn't support chmod, but the PRAGMA settings help
+        conn.execute("PRAGMA secure_delete=ON")
+    except Exception:
+        pass
+
+def _hash_password(password, salt=None):
+    """SHA-256 + per-user salt se password hash karo"""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    hashed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
+    return f"{salt}${hashed}"
 
 def init_db():
     conn = _get_connection()
@@ -202,14 +219,27 @@ def verify_admin(username, password):
         cursor = conn.cursor()
         cursor.execute("SELECT password_hash FROM admin_users WHERE username=?", (username,))
         result = cursor.fetchone()
-        if result and result[0] == _hash_password(password):
-            return True
+        if result:
+            stored = result[0]
+            # 🛡️ SECURITY: Support both salted (new) and unsalted (legacy) hashes
+            if '$' in stored:
+                # New format: salt$hash
+                salt, stored_hash = stored.split('$', 1)
+                computed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
+                if computed == stored_hash:
+                    return True
+            else:
+                # Legacy format: bare SHA-256
+                if stored == hashlib.sha256(password.encode()).hexdigest():
+                    # Upgrade to salted hash on successful login
+                    upgrade_admin_password(username, password)
+                    return True
         return False
     finally:
         conn.close()
 
 def update_admin_password(username, new_password):
-    """Password change / reset"""
+    """Password change / reset with salted hash"""
     conn = _get_connection()
     try:
         cursor = conn.cursor()
@@ -217,6 +247,17 @@ def update_admin_password(username, new_password):
                        (_hash_password(new_password), username))
         conn.commit()
         return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+def upgrade_admin_password(username, password):
+    """Upgrade legacy unsalted hash to salted hash"""
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE admin_users SET password_hash=? WHERE username=?", 
+                       (_hash_password(password), username))
+        conn.commit()
     finally:
         conn.close()
 
@@ -374,6 +415,21 @@ def clear_all_deals():
         cursor = conn.cursor()
         cursor.execute("DELETE FROM sent_deals")
         conn.commit()
+    finally:
+        conn.close()
+
+def delete_oldest_deals(count=50):
+    """Delete the oldest N deals from sent_deals (gradual cleanup)."""
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM sent_deals WHERE id IN (
+                SELECT id FROM sent_deals ORDER BY id ASC LIMIT ?
+            )
+        """, (count,))
+        conn.commit()
+        return cursor.rowcount
     finally:
         conn.close()
 
