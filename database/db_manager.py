@@ -127,6 +127,14 @@ def init_db():
         "UPDATE categories SET post_format='default' WHERE post_format IS NULL OR TRIM(post_format)=''"
     )
 
+    # Migrate older DBs that were created without product_image / post_type columns
+    cursor.execute("PRAGMA table_info(sent_deals)")
+    sent_columns = {row[1] for row in cursor.fetchall()}
+    if 'product_image' not in sent_columns:
+        cursor.execute("ALTER TABLE sent_deals ADD COLUMN product_image TEXT DEFAULT ''")
+    if 'post_type' not in sent_columns:
+        cursor.execute("ALTER TABLE sent_deals ADD COLUMN post_type TEXT DEFAULT 'normal'")
+
     # Default settings (INSERT OR IGNORE — restart par saved value overwrite nahi hogi)
     default_settings = {
         'PRICE_SCREENSHOT': 'OFF',
@@ -392,9 +400,28 @@ def get_recent_deals(limit=20):
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, title, affiliate_link, category, timestamp FROM sent_deals ORDER BY id DESC LIMIT ?", (limit,))
+        cursor.execute("SELECT id, title, affiliate_link, category, timestamp, post_type, product_image FROM sent_deals ORDER BY id DESC LIMIT ?", (limit,))
         deals = cursor.fetchall()
         return deals
+    finally:
+        conn.close()
+
+def get_all_deals_history(page=1, per_page=50):
+    """Paginated deal history for the Post History tab (newest first)."""
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM sent_deals")
+        total = cursor.fetchone()[0]
+        offset = (page - 1) * per_page
+        cursor.execute(
+            "SELECT id, title, original_link, affiliate_link, category, timestamp, post_type, product_image "
+            "FROM sent_deals ORDER BY id DESC LIMIT ? OFFSET ?",
+            (per_page, offset)
+        )
+        deals = cursor.fetchall()
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        return deals, total, total_pages, page
     finally:
         conn.close()
 
@@ -443,14 +470,14 @@ def is_link_already_sent(original_link):
     finally:
         conn.close()
 
-def save_deal(title, original_link, affiliate_link, category="General"):
+def save_deal(title, original_link, affiliate_link, category="General", product_image="", post_type="normal"):
     try:
         conn = _get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO sent_deals (title, original_link, affiliate_link, category) VALUES (?, ?, ?, ?)",
-                (title, original_link, affiliate_link, category)
+                "INSERT INTO sent_deals (title, original_link, affiliate_link, category, product_image, post_type) VALUES (?, ?, ?, ?, ?, ?)",
+                (title, original_link, affiliate_link, category, product_image, post_type)
             )
             conn.commit()
         finally:

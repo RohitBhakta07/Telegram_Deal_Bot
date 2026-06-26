@@ -56,6 +56,14 @@ def build_deal_message(deal, affiliate_link, fmt=FORMAT_HOT_DEAL):
     price = deal.get("price", "")
     discount = deal.get("discount", "")
     rating = deal.get("rating", "")
+    buyers = deal.get("buyers_count", 0)
+
+    # Rating display: "New/Unrated (0+ bought)" if no rating
+    rating_str = str(rating).strip()
+    if not rating_str or rating_str in ("0", "0.0", "", "N/A"):
+        rating_display = f"🆕 New/Unrated ({buyers}+ bought)"
+    else:
+        rating_display = f"⭐ {rating_str} ({buyers}+ bought)"
 
     if fmt == FORMAT_MEGA_LOOT:
         return f"""🚨 <b>MEGA LOOT ALERT | PRICE DROP</b> 🚨
@@ -65,6 +73,7 @@ def build_deal_message(deal, affiliate_link, fmt=FORMAT_HOT_DEAL):
 💰 <b>MRP : </b> <del>{mrp}</del>
 💸 <b>Loot Price : </b> {price}
 📉 <b>Flat {discount}</b>
+{rating_display}
 
 👉 <b>Loot Fast (Stock ends in mins): 👇</b> 
 {affiliate_link}
@@ -82,6 +91,6 @@ def build_deal_message(deal, affiliate_link, fmt=FORMAT_HOT_DEAL):
 👉 <b>Check price on Flipkart: 👇</b> 
 {affiliate_link}
 
-⭐ <b>Rating : </b> {rating}
+{rating_display}
 ⚡ Limited time deal
 ⏳ Stock fast finish hota hai!"""

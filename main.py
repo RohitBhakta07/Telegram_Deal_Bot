@@ -191,24 +191,35 @@ def consumer_thread(deal_queue, stop_event):
             # ---- SAVE TO DATABASE ----
             try:
                 with _db_lock:
+                    post_type = "flash" if priority <= 1 else "normal"
                     db_manager.save_deal(
                         title=deal.get('title', ''),
                         original_link=link,
                         affiliate_link=final_affiliate_link,
-                        category=category
+                        category=category,
+                        product_image=deal.get('image', ''),
+                        post_type=post_type
                     )
             except Exception as e:
                 print(f"  ⚠️ [Consumer] Deal save error: {e}")
             
             deal_queue.task_done()
             
-            # ---- DELAY BEFORE NEXT POST (Dashboard controlled) ----
+            # ---- DELAY BEFORE NEXT POST (Dashboard controlled, min 60s enforced) ----
             try:
                 delay = int(db_manager.get_setting('QUEUE_DELAY_POST', 15))
             except Exception:
                 delay = 15
+            # 🛡️ Enforce minimum 60s gap to prevent spammy posting
+            if delay < 60:
+                print(f"  ⚠️ [Consumer] QUEUE_DELAY_POST={delay}s is too low. Enforcing minimum 60s.")
+                delay = 60
+                try:
+                    db_manager.update_setting('QUEUE_DELAY_POST', '60')
+                except Exception:
+                    pass
             
-            print(f"  ⏳ [Consumer] {delay} seconds wait before next post...")
+            print(f"  ⏳ [Consumer] {delay}s wait before next post...")
             
             # Sleep in small chunks taaki stop_event check hota rahe
             for _ in range(delay):

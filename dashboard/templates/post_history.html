@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% block title %}Post History{% endblock %}
+
+{% block content %}
+<div class="p-6">
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h3 class="text-2xl font-black text-slate-900 dark:text-white">📋 Deal History</h3>
+      <p class="text-sm text-slate-400 mt-1">Total <strong>{{ total }}</strong> deals posted</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-slate-500">{{ current_page }} / {{ total_pages }} pages</span>
+    </div>
+  </div>
+
+  {% if deals %}
+  <!-- Deal Cards -->
+  <div class="space-y-3">
+    {% for deal in deals %}
+    {% set id, title, original_link, affiliate_link, category, timestamp, post_type, product_image = deal %}
+    <div class="bg-white dark:bg-[#162128] rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all overflow-hidden">
+      <div class="flex items-stretch gap-0">
+        <!-- Thumbnail -->
+        <div class="w-28 h-28 flex-shrink-0 bg-slate-100 dark:bg-[#1b2327] overflow-hidden flex items-center justify-center">
+          {% if product_image %}
+          <img src="{{ product_image }}" alt="" class="w-full h-full object-contain p-1"
+               referrerpolicy="no-referrer" loading="lazy"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <span class="material-symbols-outlined text-3xl text-slate-400" style="display:none">image</span>
+          {% else %}
+          <span class="material-symbols-outlined text-3xl text-slate-400">image</span>
+          {% endif %}
+        </div>
+        <!-- Info -->
+        <div class="flex-1 min-w-0 px-4 py-3 flex flex-col justify-center gap-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <p class="text-sm font-bold text-slate-900 dark:text-white truncate max-w-md" title="{{ title }}">{{ title[:60] }}{% if title|length > 60 %}...{% endif %}</p>
+            {% if post_type == 'instant' %}
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-fuchsia-500/10 text-fuchsia-500 border border-fuchsia-500/20">🚀 INSTANT</span>
+            {% elif post_type == 'flash' %}
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">⚡ FLASH</span>
+            {% else %}
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/20">🔍 NORMAL</span>
+            {% endif %}
+          </div>
+          <div class="flex items-center gap-3 text-xs text-slate-400">
+            <span class="font-medium">{{ category }}</span>
+            <span>•</span>
+            <span class="font-mono">{{ timestamp[:16] if timestamp else '—' }}</span>
+          </div>
+          <div class="flex items-center gap-2 mt-1">
+            <!-- Copy Original Link -->
+            <button onclick="copyLink('{{ original_link|e }}')"
+                    class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-[#1b2327] text-slate-600 dark:text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all">
+              <span class="material-symbols-outlined text-sm">content_copy</span> Copy Link
+            </button>
+            {% if affiliate_link %}
+            <a href="{{ affiliate_link }}" target="_blank"
+               class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-[#1b2327] text-slate-600 dark:text-slate-300 hover:bg-sky-500/10 hover:text-sky-500 transition-all">
+              <span class="material-symbols-outlined text-sm">open_in_new</span> Affiliate
+            </a>
+            {% endif %}
+            {% if product_image %}
+            <a href="{{ product_image }}" target="_blank"
+               class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-[#1b2327] text-slate-600 dark:text-slate-300 hover:bg-violet-500/10 hover:text-violet-500 transition-all">
+              <span class="material-symbols-outlined text-sm">image</span> Photo
+            </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <div class="flex items-center justify-center gap-2 mt-8">
+    {% if current_page > 1 %}
+    <a href="?page={{ current_page - 1 }}&per_page={{ per_page }}"
+       class="flex items-center gap-1 px-4 py-2 rounded-lg bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 text-sm font-bold text-slate-600 dark:text-slate-300 hover:border-primary transition-all">
+      <span class="material-symbols-outlined text-sm">chevron_left</span> Previous
+    </a>
+    {% endif %}
+
+    {% set start_page = [current_page - 2, 1]|max %}
+    {% set end_page = [start_page + 4, total_pages]|min %}
+    {% set start_page = [end_page - 4, 1]|max %}
+
+    {% if start_page > 1 %}
+    <a href="?page=1&per_page={{ per_page }}"
+       class="px-3 py-2 rounded-lg text-sm font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">1</a>
+    {% if start_page > 2 %}
+    <span class="px-2 text-slate-400">...</span>
+    {% endif %}
+    {% endif %}
+
+    {% for p in range(start_page, end_page + 1) %}
+    <a href="?page={{ p }}&per_page={{ per_page }}"
+       class="px-3 py-2 rounded-lg text-sm font-bold transition-all {{ 'bg-primary text-white shadow-md' if p == current_page else 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300' }}">{{ p }}</a>
+    {% endfor %}
+
+    {% if end_page < total_pages %}
+    {% if end_page < total_pages - 1 %}
+    <span class="px-2 text-slate-400">...</span>
+    {% endif %}
+    <a href="?page={{ total_pages }}&per_page={{ per_page }}"
+       class="px-3 py-2 rounded-lg text-sm font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">{{ total_pages }}</a>
+    {% endif %}
+
+    {% if current_page < total_pages %}
+    <a href="?page={{ current_page + 1 }}&per_page={{ per_page }}"
+       class="flex items-center gap-1 px-4 py-2 rounded-lg bg-white dark:bg-[#162128] border border-slate-200 dark:border-slate-800 text-sm font-bold text-slate-600 dark:text-slate-300 hover:border-primary transition-all">
+      Next <span class="material-symbols-outlined text-sm">chevron_right</span>
+    </a>
+    {% endif %}
+  </div>
+  <div class="text-center mt-2">
+    <span class="text-xs text-slate-400">Page {{ current_page }} of {{ total_pages }} ({{ total }} deals)</span>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <!-- Empty State -->
+  <div class="p-16 text-center">
+    <span class="material-symbols-outlined text-6xl text-slate-300 dark:text-slate-600 mb-4">history</span>
+    <p class="text-slate-400 font-bold text-lg">Koi deal history nahi hai</p>
+    <p class="text-slate-400 text-sm mt-1">Bot start karo ya Instant Post se pehli deal bhejo!</p>
+    <a href="/instant_post"
+       class="inline-flex items-center gap-2 mt-4 px-6 py-3 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-500 text-white font-bold text-sm shadow-lg hover:shadow-xl transition-all">
+      <span class="material-symbols-outlined text-lg">rocket_launch</span>
+      Instant Post
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function copyLink(url) {
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = event.currentTarget;
+    const original = btn.innerHTML;
+    btn.innerHTML = '<span class="material-symbols-outlined text-sm">check</span> Copied!';
+    btn.classList.add('text-emerald-500', 'bg-emerald-500/10');
+    setTimeout(() => {
+      btn.innerHTML = original;
+      btn.classList.remove('text-emerald-500', 'bg-emerald-500/10');
+    }, 2000);
+  });
+}
+</script>
+{% endblock %}

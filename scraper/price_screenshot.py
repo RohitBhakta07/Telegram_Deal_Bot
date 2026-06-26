@@ -11,19 +11,34 @@ SCREENSHOT_DIR = os.path.join(BASE_DIR, "temp_screenshots")
 
 # Flipkart price block selectors (layout changes — try several)
 _PRICE_BLOCK_SELECTORS = [
+    # Current Flipkart 2025-26 selectors (most likely)
+    "div.Nx9bqj",
+    "div[class*='Nx9bqj']",
+    "div._30jeq",
+    "div[class*='_30jeq']",
+    "span._30jeq",
+    "span[class*='_30jeq']",
+    "div._16Jk6d",
+    "div[class*='_16Jk6d']",
+    # Price block containers
+    "div[class*='price']",
+    "div[class*='Price']",
+    "div[class*='pricing']",
+    # Known Flipkart price classes
     "div[class*='yRaY8j']",
     "div[class*='hlLfp']",
     "div[class*='pqTWk']",
     "div[class*='kAEblP']",
     "div[class*='vUq9jN']",
-    "div[class*='Nx9bqj']",
     "div[class*='C7fE6x']",
-    "div[class*='price']",
-    "div[class*='Price']",
-    "div[class*='_30jeq']",
-    "div[class*='_16Jk6d']",
     "div[class*='_1kMSn']",
-    "span[class*='_30jeq']",
+    # Product title area (contains price below)
+    "div[class*='product']",
+    "div[class*='_2r_QWk']",
+    "div[class*='aMaAEs']",
+    # Generic price indicator
+    "[class*='currency']",
+    "[class*='rupee']",
 ]
 
 
@@ -64,7 +79,6 @@ def capture_price_tag_screenshot(product_url):
                 viewport={"width": 1280, "height": 900},
                 locale="en-IN",
             )
-            # context.route("**/*.{css,woff2}", lambda route: route.abort())  # CSS chahiye price render karne ke liye
             page = context.new_page()
             page.goto(product_url, timeout=35000, wait_until="domcontentloaded")
             time.sleep(3.5)
@@ -84,11 +98,11 @@ def capture_price_tag_screenshot(product_url):
                     continue
 
             if not captured:
-                # Fallback: top of product page (title + price zone)
+                # Fallback: right-side buy box area (y moved down to skip header)
                 try:
                     page.screenshot(
                         path=out_path,
-                        clip={"x": 350, "y": 60, "width": 600, "height": 500},
+                        clip={"x": 300, "y": 220, "width": 750, "height": 670},
                         timeout=10000,
                     )
                     captured = True
