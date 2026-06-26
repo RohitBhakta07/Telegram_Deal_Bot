@@ -118,21 +118,26 @@
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                 {% for deal in recent_deals %}
+                {% set post_type = deal[5] if deal|length > 5 else 'normal' %}
                 <tr class="hover:bg-slate-50/50 dark:hover:bg-[#1b2327]/50 transition-colors">
                     <td class="px-5 py-3">
                         <span class="text-xs font-mono text-slate-400">#{{ deal[0] }}</span>
                     </td>
                     <td class="px-5 py-3">
-                        <div class="max-w-xs">
+                        <div class="flex items-center gap-3 max-w-xs">
+                            {% if deal|length > 6 and deal[6] %}
+                            <img src="{{ deal[6] }}" alt="" class="w-8 h-8 rounded object-contain bg-slate-100 dark:bg-[#1b2327] flex-shrink-0"
+                                 onerror="this.style.display='none'">
+                            {% endif %}
                             <p class="font-semibold text-slate-800 dark:text-slate-200 truncate" title="{{ deal[1] }}">{{ deal[1][:55] }}{% if deal[1]|length > 55 %}...{% endif %}</p>
                         </div>
                     </td>
                     <td class="px-5 py-3">
-                        {% if deal[3] == 'INSTANT POST' %}
+                        {% if post_type == 'instant' %}
                         <span class="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-fuchsia-500/10 text-fuchsia-500">
                             🚀 Instant
                         </span>
-                        {% elif deal[3] == 'FLASH SALE' %}
+                        {% elif post_type == 'flash' %}
                         <span class="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-amber-500/10 text-amber-500">
                             ⚡ Flash
                         </span>

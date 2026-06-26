@@ -7,9 +7,11 @@ from pytrends.request import TrendReq
 # ==========================================
 # 🧠 SMART CACHING & MEMORY VARIABLES
 # ==========================================
-CACHE_DURATION = 6 * 60 * 60  # 6 Ghante tak Google ko pareshan nahi karega
+CACHE_DURATION = 6 * 60 * 60      # 6 Ghante normal cache
+COOLDOWN_AFTER_429 = 2 * 60 * 60  # 2 Ghante cooldown after rate limit
 last_fetch_time = 0
 cached_matched_products = []
+_rate_limited_until = 0  # Timestamp until which we skip API calls
 
 # Pichle bheje gaye products ki history (Taki repeat na hon)
 recent_history = []
@@ -22,13 +24,24 @@ def get_current_trend(vip_products_list):
     """
     Google Trends API + Smart Caching + Anti-Ban (User-Agent) + Memory Filter
     Thread-safe — uses _trends_lock to prevent race conditions when multiple scrapers call in parallel.
+    On 429 rate limit, sets a 2-hour cooldown to avoid getting blocked permanently.
     """
-    global last_fetch_time, cached_matched_products, recent_history
+    global last_fetch_time, cached_matched_products, recent_history, _rate_limited_until
     current_time = time.time()
     
-    # 🟢 STEP 1 (Cache Check): Agar 6 ghante nahi hue hain, toh Google ke paas mat jao
+    # 🟢 STEP 1 (Cache + Rate Limit Check)
     with _trends_lock:
-        if (current_time - last_fetch_time) < CACHE_DURATION and cached_matched_products:
+        # If we're in cooldown from a 429, skip API entirely
+        if current_time < _rate_limited_until:
+            if cached_matched_products:
+                print("⏳ Google Trends rate-limited. Using cache (cooldown active)...")
+                options = list(cached_matched_products)
+                _cached_result = True
+            else:
+                print("⏳ Google Trends rate-limited. Using DB pool...")
+                options = list(vip_products_list)
+                _cached_result = True
+        elif (current_time - last_fetch_time) < CACHE_DURATION and cached_matched_products:
             print("⚡ CACHE se trend nikal rahe hain (API bacha rahe hain)...")
             options = list(cached_matched_products)
             _cached_result = True
@@ -65,7 +78,6 @@ def get_current_trend(vip_products_list):
             
             with _trends_lock:
                 if matched_products:
-                    # Naye data ko Cache mein save kar lo
                     cached_matched_products = list(matched_products)
                     last_fetch_time = current_time
                     options = matched_products
@@ -73,7 +85,17 @@ def get_current_trend(vip_products_list):
                     options = list(vip_products_list)
                 
         except Exception as e:
-            print(f"⚠️ Google Trends Error (Ignore it): {e}")
+            err_str = str(e)
+            # 🛡️ 429 rate limit — set cooldown so we don't hammer Google
+            if '429' in err_str or 'Too Many Requests' in err_str:
+                with _trends_lock:
+                    _rate_limited_until = current_time + COOLDOWN_AFTER_429
+                    if last_fetch_time == 0:
+                        last_fetch_time = current_time  # Prevent immediate retry
+                print(f"⚠️ Google Trends RATE LIMITED (429). Cooling down for 2 hours.")
+            else:
+                print(f"⚠️ Google Trends Error (Ignore it): {e}")
+            
             with _trends_lock:
                 if cached_matched_products:
                     options = list(cached_matched_products)

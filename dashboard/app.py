@@ -488,7 +488,9 @@ def instant_post_send():
                     title=deal['title'],
                     original_link=url,
                     affiliate_link=affiliate_link,
-                    category="INSTANT POST"
+                    category="INSTANT POST",
+                    product_image=deal.get('image', ''),
+                    post_type="instant"
                 )
             except:
                 pass
@@ -503,6 +505,25 @@ def instant_post_send():
     thread.start()
     
     return jsonify({"status": "success", "message": "🚀 Processing shuru ho gaya! 10-15 sec mein Telegram par post ho jayega."})
+
+# ==========================================
+# 📋 POST HISTORY TAB
+# ==========================================
+@app.route('/post_history')
+@login_required
+def post_history():
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    if page < 1: page = 1
+    if per_page < 10: per_page = 10
+    if per_page > 200: per_page = 200
+    deals, total, total_pages, current_page = db_manager.get_all_deals_history(page, per_page)
+    return render_template('post_history.html',
+                           deals=deals,
+                           total=total,
+                           total_pages=total_pages,
+                           current_page=current_page,
+                           per_page=per_page)
 
 # ==========================================
 # 📺 LIVE TERMINAL CONSOLE
