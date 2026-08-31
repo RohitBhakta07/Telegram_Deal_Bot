@@ -5,16 +5,35 @@ __pycache__/
 *.py[cod]
 *.pyo
 venv/
+.venv/
+.python-version
 .env
+.env.*
+!.env.example
 
 # Sensitive Data (NEVER PUSH)
 database/bot_data.db
 userbot/extrape_session.session
 userbot/extrape_session.session-journal
 bot.log
+*.log
 temp_screenshots/
+temp_media_frames/
+tmp/
+output/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 *.session
 *.session-journal
+
+# Browser/test artifacts
+playwright-report/
+test-results/
+trace.zip
 
 # IDE
 .vscode/

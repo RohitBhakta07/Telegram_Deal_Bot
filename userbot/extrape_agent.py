@@ -1,15 +1,25 @@
+"""
+ExtraPe affiliate link agent — thread-safe Telethon wrapper.
+
+Telethon's async client must be created and used on the same event loop.
+This module runs a dedicated event loop in a background daemon thread.
+All async calls are submitted via run_coroutine_threadsafe, making
+get_sync_link() safe to call from any thread.
+
+The .session file persists auth credentials across restarts.
+"""
 import asyncio
 import re
 import sys
 import os
+import threading
+from urllib.parse import urlsplit
 
-# 📂 HOSTING PATH FIX
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-# 🛡️ Config se API Keys aur Session ka fixed raasta uthana
 from config import API_ID, API_HASH, SESSION_PATH
 try:
     from telethon import TelegramClient
@@ -18,118 +28,142 @@ except Exception:
 
 EXTRAPE_BOT_USERNAME = '@ExtraPeBot'
 
-# Ensure session directory exists and use a session file path
-try:
-    if SESSION_PATH and not os.path.exists(SESSION_PATH):
-        os.makedirs(SESSION_PATH, exist_ok=True)
-    session_file = SESSION_PATH if os.path.isfile(SESSION_PATH) else os.path.join(SESSION_PATH, 'extrape.session')
-except Exception:
-    session_file = SESSION_PATH or 'extrape.session'
+def _resolve_session_file(session_path):
+    """Return a Telethon session *file prefix*, never a directory."""
+    if not session_path:
+        return os.path.join(parent_dir, "userbot", "extrape_session", "extrape")
 
-client = None
-if TelegramClient is not None:
+    expanded = os.path.abspath(os.path.expanduser(str(session_path)))
+    # Config historically stores a directory.  A .session suffix explicitly
+    # means that the caller supplied a file path.
+    if expanded.lower().endswith(".session"):
+        os.makedirs(os.path.dirname(expanded) or ".", exist_ok=True)
+        return expanded[:-8]  # Telethon adds .session itself
+
+    os.makedirs(expanded, exist_ok=True)
+    return os.path.join(expanded, "extrape")
+
+
+_session_file = _resolve_session_file(SESSION_PATH)
+
+
+# -------------------------------------------------------------------
+# Dedicated event loop thread — single persistent loop for Telethon
+# -------------------------------------------------------------------
+_loop = None
+_loop_lock = threading.Lock()
+_loop_thread = None
+
+
+def _start_loop_thread():
+    global _loop, _loop_thread
+    with _loop_lock:
+        if _loop is not None:
+            return _loop
+        _loop = asyncio.new_event_loop()
+        _loop_thread = threading.Thread(
+            target=_loop.run_forever,
+            daemon=True,
+            name="TelethonLoop",
+        )
+        _loop_thread.start()
+        return _loop
+
+
+def _stop_loop():
+    global _loop, _loop_thread
+    with _loop_lock:
+        if _loop is not None and _loop.is_running():
+            _loop.call_soon_threadsafe(_loop.stop)
+        _loop = None
+        _loop_thread = None
+
+
+# -------------------------------------------------------------------
+# Core async logic
+# -------------------------------------------------------------------
+async def _get_extrape_link(client, original_link):
     try:
-        client = TelegramClient(session_file, API_ID, API_HASH)
-    except Exception as e:
-        print(f"⚠️ Telethon Client init error: {e}")
-        client = None
-else:
-    print("⚠️ Telethon not installed. userbot features disabled.")
-
-async def get_extrape_link(original_link):
-    """
-    Link bhejega aur specifically ExtraPe ke naye reply ka wait karega.
-    """
-    # 🛡️ HOSTING FIX: Agar client init nahi hua ya authorized nahi hai toh seedha original link return karo
-    if client is None:
-        print("⚠️ Telethon client not initialized. Returning original link.")
-        return original_link
-        
-    try:
-        if not client.is_connected():
-            await client.connect()
-
         if not await client.is_user_authorized():
-            print("⚠️ Userbot is NOT authorized. Fallback to original link.")
+            print("[ExtraPe] Userbot is NOT authorized. Using original link.")
             return original_link
 
-        print(f"🕵️‍♂️ Agent: Sending link and waiting for reply...")
-        
-        # Timeout 60 second rakha hai taaki bot hamesha ke liye na atak jaye
+        print("[ExtraPe] Sending link and waiting for reply...")
+
         async with client.conversation(EXTRAPE_BOT_USERNAME, timeout=60) as conv:
-            # 1. ExtraPe ko message bhejte hain
             await conv.send_message(original_link)
-            
-            # 2. Specifically uske agle naye reply ka wait karte hain
             response = await conv.get_response()
-            reply_text = response.text
-            
-            # 3. Reply aate hi usme se link nikalte hain
-            if "http" in reply_text:
-                urls = re.findall(r'(https?://[^\s]+)', reply_text)
-                
-                if urls:
-                    # Sirf wahi link uthaayenge jo lamba flipkart.com wala NAHI hai (taaki fkrt.co mile)
-                    short_urls = [u for u in urls if 'flipkart.com' not in u]
-                    
-                    if short_urls:
-                        print(f"✅ Affiliate Link Received: {short_urls[0]}")
-                        return short_urls[0]
-                    else:
-                        print(f"⚠️ ExtraPe ne lamba link wapas kar diya. Backup chalayenge.")
-                        return original_link
-            
-        print("⚠️ Reply mein koi link nahi mila.")
+            reply_text = response.text or ""
+            urls = re.findall(r'https?://[^\s<>"\']+', reply_text)
+            # ExtraPe may place the generated URL only in an inline button.
+            for row in (response.buttons or []):
+                for button in row:
+                    button_url = getattr(button, "url", None)
+                    if button_url:
+                        urls.append(button_url)
+
+            cleaned = []
+            for url in urls:
+                url = url.rstrip('.,);]}')
+                try:
+                    if urlsplit(url).scheme in ("http", "https") and url != original_link:
+                        cleaned.append(url)
+                except Exception:
+                    continue
+            if cleaned:
+                preferred = next((u for u in cleaned if 'fkrt.co' in u.lower()), cleaned[0])
+                print(f"[ExtraPe] Affiliate link received: {preferred}")
+                return preferred
+
+        print("[ExtraPe] No link found in reply.")
         return original_link
 
     except asyncio.TimeoutError:
-        print("⏳ Timeout: ExtraPe ne 60 sec tak reply nahi diya. Backup chalayenge.")
+        print("[ExtraPe] Timeout after 60s. Using original link.")
         return original_link
     except ConnectionError:
-        print("❌ Telethon Connection Error: Internet ya Telegram server down hai.")
+        print("[ExtraPe] Telegram connection error. Using original link.")
         return original_link
     except Exception as e:
-        print(f"❌ Userbot Error: {e}")
+        print(f"[ExtraPe] Userbot error: {e}")
         return original_link
 
-def get_sync_link(original_link):
-    # 🛡️ HOSTING FIX: Agar client None hai toh async loop mat chalao
-    if client is None:
-        print("⚠️ Telethon client not available. Using original link.")
+
+async def _run_async(original_link):
+    if not API_ID or not API_HASH:
+        print("[ExtraPe] API_ID/API_HASH missing; userbot disabled.")
         return original_link
-        
+    client = TelegramClient(_session_file, API_ID, API_HASH)
     try:
-        # 🛡️ THREAD FIX: Background thread mein event loop nahi hota,
-        # toh naya banao agar zaroorat ho
+        await client.connect()
+        return await _get_extrape_link(client, original_link)
+    finally:
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        async def run_async_safe():
-            try:
-                if not client.is_connected():
-                    await client.connect()
-                
-                # Check authorization without prompting
-                if not await client.is_user_authorized():
-                    print("⚠️ [Telethon] Userbot is NOT authorized! Fallback to backup URL.")
-                    return original_link
-                
-                return await get_extrape_link(original_link)
-            except Exception as e:
-                print(f"❌ Userbot async authorization / run error: {e}")
-                return original_link
-            
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                result = pool.submit(asyncio.run, run_async_safe()).result(timeout=90)
-            return result
-            
-        return loop.run_until_complete(run_async_safe())
-        
+            await client.disconnect()
+        except Exception:
+            pass
+
+
+# -------------------------------------------------------------------
+# Public thread-safe entry point
+# -------------------------------------------------------------------
+def get_sync_link(original_link):
+    if not original_link:
+        return original_link
+    if TelegramClient is None:
+        print("[ExtraPe] Telethon not installed. Using original link.")
+        return original_link
+
+    loop = _start_loop_thread()
+
+    try:
+        future = asyncio.run_coroutine_threadsafe(
+            _run_async(original_link), loop,
+        )
+        return future.result(timeout=90)
+    except asyncio.TimeoutError:
+        print("[ExtraPe] Sync call timed out after 90s. Using original link.")
+        return original_link
     except Exception as e:
-        print(f"❌ Sync Link Error: {e}")
+        print(f"[ExtraPe] Sync link error: {e}")
         return original_link

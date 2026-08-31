@@ -9,6 +9,19 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script>
+        // Global CSRF protection for all fetch POST/PUT/DELETE requests
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        const origFetch = window.fetch;
+        window.fetch = function(url, opts = {}) {
+            if (opts.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(opts.method.toUpperCase())) {
+                opts.headers = opts.headers || {};
+                opts.headers['X-CSRFToken'] = csrfToken;
+            }
+            return origFetch(url, opts);
+        };
+    </script>
     <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",

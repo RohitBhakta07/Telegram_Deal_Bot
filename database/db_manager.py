@@ -1,28 +1,47 @@
 import sqlite3
 import os
 import time
-import hashlib
 import random
+import threading
+import bcrypt
 
 # Database file path setup
 DB_PATH = os.path.join(os.path.dirname(__file__), 'bot_data.db')
 
-# 🛡️ HOSTING FIX: Thread-safe connection wrapper with auto-retry for locked DB
+# Connection pool for thread safety
+_connection_cache = threading.local()
+
 def _get_connection(retries=3):
-    """SQLite connection with retry logic for 'database is locked' errors on hosting."""
+    """SQLite connection with retry logic and per-thread caching."""
+    if hasattr(_connection_cache, 'conn'):
+        try:
+            _connection_cache.conn.execute("SELECT 1")
+            return _connection_cache.conn
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+            pass
     for attempt in range(retries):
         try:
-            conn = sqlite3.connect(DB_PATH, timeout=10)
+            conn = sqlite3.connect(DB_PATH, timeout=15)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            _connection_cache.conn = conn
             return conn
         except sqlite3.OperationalError as e:
             if attempt < retries - 1:
-                time.sleep(1)
+                time.sleep(0.5)
             else:
                 raise e
 
 def _hash_password(password):
-    """SHA-256 se password hash karo"""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """bcrypt password hashing with built-in salt."""
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
+
+def _check_password(password, stored_hash):
+    """bcrypt password verification."""
+    try:
+        return bcrypt.checkpw(password.encode(), stored_hash.encode())
+    except Exception:
+        return False
 
 def init_db():
     conn = _get_connection()
@@ -112,7 +131,7 @@ def init_db():
 
     # Default settings (INSERT OR IGNORE — restart par saved value overwrite nahi hogi)
     default_settings = {
-        'PRICE_SCREENSHOT': 'OFF',
+        'PRICE_SCREENSHOT': 'ON',
         'DEFAULT_POST_FORMAT': 'hot_deal',
         'FLASH_POST_FORMAT': 'mega_loot',
         'bot_status': 'ON',
@@ -132,6 +151,14 @@ def init_db():
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             (key, value),
         )
+
+    # Performance indexes
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sent_deals_link ON sent_deals(original_link)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sent_deals_timestamp ON sent_deals(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key)")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()
@@ -155,24 +182,12 @@ def _category_priority(cat):
     return cat[4] if len(cat) > 4 else 'MEDIUM'
 
 def order_categories_by_priority(categories):
-    """Weighted shuffle: HIGH categories appear more often at the front of the list."""
-    weighted = []
-    for cat in categories:
-        priority = _category_priority(cat)
-        weighted.extend([cat] * get_priority_weight(priority))
-    random.shuffle(weighted)
-
-    ordered = []
-    seen_names = set()
-    for cat in weighted:
-        name = cat[1]
-        if name not in seen_names:
-            ordered.append(cat)
-            seen_names.add(name)
-    for cat in categories:
-        if cat[1] not in seen_names:
-            ordered.append(cat)
-    return ordered
+    """Return categories in deterministic HIGH → MEDIUM → LOW order."""
+    return sorted(
+        categories,
+        key=lambda cat: get_priority_weight(_category_priority(cat)),
+        reverse=True,
+    )
 
 def build_keyword_weights(categories):
     """Map each keyword to its highest priority weight across categories."""
@@ -202,7 +217,7 @@ def verify_admin(username, password):
         cursor = conn.cursor()
         cursor.execute("SELECT password_hash FROM admin_users WHERE username=?", (username,))
         result = cursor.fetchone()
-        if result and result[0] == _hash_password(password):
+        if result and _check_password(password, result[0]):
             return True
         return False
     finally:

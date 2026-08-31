@@ -20,6 +20,7 @@
             </div>
 
             <form action="/add_flash" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="flex flex-col gap-2">
                         <label class="text-sm font-semibold text-slate-400">Premium Keyword</label>
@@ -137,6 +138,7 @@
             </button>
         </div>
         <form id="editFlashForm" method="POST" class="p-6 space-y-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="space-y-4">
                 <div class="flex flex-col gap-2">
                     <label class="text-sm font-semibold text-slate-400">Target Keyword</label>
