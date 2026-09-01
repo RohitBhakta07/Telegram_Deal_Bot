@@ -17,7 +17,7 @@
         window.fetch = function(url, opts = {}) {
             if (opts.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(opts.method.toUpperCase())) {
                 opts.headers = opts.headers || {};
-                opts.headers['X-CSRFToken'] = csrfToken;
+                opts.headers['X-CSRF-Token'] = csrfToken;
             }
             return origFetch(url, opts);
         };
@@ -97,6 +97,11 @@
                         <span class="material-symbols-outlined text-[22px] text-violet-500">rocket_launch</span>
                         <span class="text-sm font-semibold">Instant Post</span>
                     </a>
+                    <a href="/post_history"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                        <span class="material-symbols-outlined text-[22px] text-amber-500">history</span>
+                        <span class="text-sm font-semibold">Post History</span>
+                    </a>
                     <a href="/live_console"
                         class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
                         <span class="material-symbols-outlined text-[22px]">terminal</span>
@@ -126,10 +131,13 @@
                         </div>
                         <img alt="Admin Avatar" class="size-10 rounded-full border-2 border-primary/20 p-0.5"
                             src="https://ui-avatars.com/api/?name={{ session.get('username', 'Admin') }}&background=0da2e7&color=fff">
-                        <a href="/logout" title="Logout"
+                        <form method="POST" action="/logout">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" title="Logout"
                             class="p-2 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors">
                             <span class="material-symbols-outlined text-xl">logout</span>
-                        </a>
+                            </button>
+                        </form>
                     </div>
                 </div>
             </header>

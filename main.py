@@ -96,9 +96,11 @@ def clear_old_links():
         with _db_lock:
             total_deals = db_manager.get_total_deals_count()
             if total_deals >= 192:
-                db_manager.clear_all_deals()
-                db_manager.update_setting('used_keywords', '')
-                log_info(f"Memory reset: {total_deals} deals completed. New cycle!")
+                deleted = db_manager.delete_oldest_deals(50)
+                log_info(
+                    f"History cleanup: {total_deals} deals total; "
+                    f"removed {deleted} oldest records."
+                )
     except Exception as e:
         log_error(f"DB count error: {e}")
 
@@ -195,6 +197,8 @@ def _post_single_deal(deal_queue, stop_event, item, priority, timestamp,
                     original_link=link,
                     affiliate_link=final_affiliate_link,
                     category=category,
+                    product_image=deal.get('image', ''),
+                    post_type='flash' if priority <= 1 else 'normal',
                 )
         except Exception as e:
             log_warn(f"[Consumer] Deal save error: {e}")

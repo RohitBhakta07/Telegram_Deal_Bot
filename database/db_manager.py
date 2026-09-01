@@ -4,6 +4,8 @@ import time
 import random
 import threading
 import bcrypt
+import hashlib
+import hmac
 
 # Database file path setup
 DB_PATH = os.path.join(os.path.dirname(__file__), 'bot_data.db')
@@ -22,8 +24,7 @@ def _get_connection(retries=3):
     for attempt in range(retries):
         try:
             conn = sqlite3.connect(DB_PATH, timeout=15)
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
+            _enable_secure_db_pragmas(conn)
             _connection_cache.conn = conn
             return conn
         except sqlite3.OperationalError as e:
@@ -32,21 +33,38 @@ def _get_connection(retries=3):
             else:
                 raise e
 
+def _enable_secure_db_pragmas(conn):
+    """Enable durability and privacy-related SQLite options."""
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA secure_delete=ON")
+
 def _hash_password(password):
     """bcrypt password hashing with built-in salt."""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
 
 def _check_password(password, stored_hash):
-    """bcrypt password verification."""
+    """Verify bcrypt plus older PBKDF2/SHA-256 hashes during migration."""
     try:
-        return bcrypt.checkpw(password.encode(), stored_hash.encode())
+        if stored_hash.startswith(("$2a$", "$2b$", "$2y$")):
+            return bcrypt.checkpw(password.encode(), stored_hash.encode())
+        if '$' in stored_hash:
+            salt, expected = stored_hash.split('$', 1)
+            computed = hashlib.pbkdf2_hmac(
+                'sha256', password.encode(), salt.encode(), 100000
+            ).hex()
+            return hmac.compare_digest(computed, expected)
+        computed = hashlib.sha256(password.encode()).hexdigest()
+        return hmac.compare_digest(computed, stored_hash)
     except Exception:
         return False
 
 def init_db():
     conn = _get_connection()
     cursor = conn.cursor()
-    
+
     # 1. Sent Deals Table (History record ke liye)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sent_deals (
@@ -58,7 +76,7 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     # 2. Channels Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS channels (
@@ -67,7 +85,7 @@ def init_db():
             channel_name TEXT
         )
     ''')
-    
+
     # 3. Settings Table (API IDs aur Tokens ke liye)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
@@ -75,18 +93,18 @@ def init_db():
             value TEXT
         )
     ''')
-    
+
     # 4. Categories Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            name TEXT, 
-            keywords TEXT, 
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            keywords TEXT,
             min_discount INTEGER,
             priority TEXT DEFAULT 'MEDIUM'
         )
     ''')
-    
+
     # 5. Flash Keywords Table (Ninja Sniper ke liye)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS flash_keywords (
@@ -95,7 +113,7 @@ def init_db():
             min_discount INTEGER NOT NULL
         )
     ''')
-    
+
     # 6. 🔒 Admin Users Table (Dashboard Login)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS admin_users (
@@ -104,12 +122,12 @@ def init_db():
             password_hash TEXT NOT NULL
         )
     ''')
-    
+
     # Default admin create karo agar nahi hai
     cursor.execute("SELECT COUNT(*) FROM admin_users")
     if cursor.fetchone()[0] == 0:
         default_hash = _hash_password("admin123")
-        cursor.execute("INSERT INTO admin_users (username, password_hash) VALUES (?, ?)", 
+        cursor.execute("INSERT INTO admin_users (username, password_hash) VALUES (?, ?)",
                        ("admin", default_hash))
         print("🔒 Default admin created → Username: admin | Password: admin123")
 
@@ -128,6 +146,14 @@ def init_db():
     cursor.execute(
         "UPDATE categories SET post_format='default' WHERE post_format IS NULL OR TRIM(post_format)=''"
     )
+
+    # Migrate older DBs that were created without product_image / post_type columns
+    cursor.execute("PRAGMA table_info(sent_deals)")
+    sent_columns = {row[1] for row in cursor.fetchall()}
+    if 'product_image' not in sent_columns:
+        cursor.execute("ALTER TABLE sent_deals ADD COLUMN product_image TEXT DEFAULT ''")
+    if 'post_type' not in sent_columns:
+        cursor.execute("ALTER TABLE sent_deals ADD COLUMN post_type TEXT DEFAULT 'normal'")
 
     # Default settings (INSERT OR IGNORE — restart par saved value overwrite nahi hogi)
     default_settings = {
@@ -218,20 +244,33 @@ def verify_admin(username, password):
         cursor.execute("SELECT password_hash FROM admin_users WHERE username=?", (username,))
         result = cursor.fetchone()
         if result and _check_password(password, result[0]):
+            if not result[0].startswith(("$2a$", "$2b$", "$2y$")):
+                upgrade_admin_password(username, password)
             return True
         return False
     finally:
         conn.close()
 
 def update_admin_password(username, new_password):
-    """Password change / reset"""
+    """Password change / reset with salted hash"""
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE admin_users SET password_hash=? WHERE username=?", 
+        cursor.execute("UPDATE admin_users SET password_hash=? WHERE username=?",
                        (_hash_password(new_password), username))
         conn.commit()
         return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+def upgrade_admin_password(username, password):
+    """Upgrade legacy unsalted hash to salted hash"""
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE admin_users SET password_hash=? WHERE username=?",
+                       (_hash_password(password), username))
+        conn.commit()
     finally:
         conn.close()
 
@@ -315,7 +354,7 @@ def add_flash_keyword(keyword, min_discount):
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO flash_keywords (keyword, min_discount) VALUES (?, ?)", 
+        cursor.execute("INSERT INTO flash_keywords (keyword, min_discount) VALUES (?, ?)",
                        (keyword, min_discount))
         conn.commit()
     finally:
@@ -344,7 +383,7 @@ def update_flash_keyword(keyword_id, keyword, min_discount):
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE flash_keywords SET keyword=?, min_discount=? WHERE id=?", 
+        cursor.execute("UPDATE flash_keywords SET keyword=?, min_discount=? WHERE id=?",
                        (keyword, min_discount, keyword_id))
         conn.commit()
     finally:
@@ -366,9 +405,28 @@ def get_recent_deals(limit=20):
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, title, affiliate_link, category, timestamp FROM sent_deals ORDER BY id DESC LIMIT ?", (limit,))
+        cursor.execute("SELECT id, title, affiliate_link, category, timestamp, post_type, product_image FROM sent_deals ORDER BY id DESC LIMIT ?", (limit,))
         deals = cursor.fetchall()
         return deals
+    finally:
+        conn.close()
+
+def get_all_deals_history(page=1, per_page=50):
+    """Paginated deal history for the Post History tab (newest first)."""
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM sent_deals")
+        total = cursor.fetchone()[0]
+        offset = (page - 1) * per_page
+        cursor.execute(
+            "SELECT id, title, original_link, affiliate_link, category, timestamp, post_type, product_image "
+            "FROM sent_deals ORDER BY id DESC LIMIT ? OFFSET ?",
+            (per_page, offset)
+        )
+        deals = cursor.fetchall()
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        return deals, total, total_pages, page
     finally:
         conn.close()
 
@@ -392,6 +450,21 @@ def clear_all_deals():
     finally:
         conn.close()
 
+def delete_oldest_deals(count=50):
+    """Delete the oldest N deals from sent_deals (gradual cleanup)."""
+    conn = _get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM sent_deals WHERE id IN (
+                SELECT id FROM sent_deals ORDER BY id ASC LIMIT ?
+            )
+        """, (count,))
+        conn.commit()
+        return cursor.rowcount
+    finally:
+        conn.close()
+
 def is_link_already_sent(original_link):
     conn = _get_connection()
     try:
@@ -402,14 +475,14 @@ def is_link_already_sent(original_link):
     finally:
         conn.close()
 
-def save_deal(title, original_link, affiliate_link, category="General"):
+def save_deal(title, original_link, affiliate_link, category="General", product_image="", post_type="normal"):
     try:
         conn = _get_connection()
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO sent_deals (title, original_link, affiliate_link, category) VALUES (?, ?, ?, ?)",
-                (title, original_link, affiliate_link, category)
+                "INSERT INTO sent_deals (title, original_link, affiliate_link, category, product_image, post_type) VALUES (?, ?, ?, ?, ?, ?)",
+                (title, original_link, affiliate_link, category, product_image, post_type)
             )
             conn.commit()
         finally:

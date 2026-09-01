@@ -4,6 +4,9 @@
 __pycache__/
 *.py[cod]
 *.pyo
+*.egg-info/
+dist/
+build/
 venv/
 .venv/
 .python-version
@@ -15,8 +18,14 @@ venv/
 database/bot_data.db
 userbot/extrape_session.session
 userbot/extrape_session.session-journal
+userbot/extrape_session/
+scraper/cookies.json
+cookies.json
 bot.log
 *.log
+auth_audit.log
+*.db-shm
+*.db-wal
 temp_screenshots/
 temp_media_frames/
 tmp/
@@ -35,10 +44,17 @@ playwright-report/
 test-results/
 trace.zip
 
+# Deployment-local configuration
+.production
+
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini

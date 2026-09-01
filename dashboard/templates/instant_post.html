@@ -128,9 +128,10 @@
         msg.textContent = '⏳ Scraping & posting... 10-15 sec lagenge...';
         msg.classList.remove('hidden');
 
+        var csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         fetch('/instant_post_send', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrf },
             body: 'product_url=' + encodeURIComponent(url) + '&post_format=' + encodeURIComponent(document.getElementById('post_format').value)
         })
             .then(r => r.json())

@@ -106,6 +106,10 @@
 </div>
 
 <script>
+    function getCSRFToken() {
+        return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    }
+
     let autoScroll = true; // Default auto-scroll ON rahega
 
     // 1. Toggle Auto-Scroll
@@ -123,7 +127,7 @@
 
     // 2. Clear Logs (Jhaadu Button)
     function clearLogsAction() {
-        fetch('/clear_logs', { method: 'POST' })
+        fetch('/clear_logs', { method: 'POST', headers: { 'X-CSRF-Token': getCSRFToken() } })
             .then(response => response.json())
             .then(data => {
                 document.getElementById('log-content').innerHTML = ''; // Screen turant saaf
@@ -161,7 +165,7 @@
 
     // 5. Restart Bot
     function restartBotAction() {
-        fetch('/restart_bot', { method: 'POST' })
+        fetch('/restart_bot', { method: 'POST', headers: { 'X-CSRF-Token': getCSRFToken() } })
             .then(response => response.json())
             .then(data => {
                 alert("Restart signal sent to server!");

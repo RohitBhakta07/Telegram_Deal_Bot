@@ -14,8 +14,13 @@ SCREENSHOT_DIR = os.path.join(BASE_DIR, "temp_screenshots")
 _PRICE_BLOCK_SELECTORS = [
     "[itemprop='offers']",
     "[itemprop='price']",
+    "[itemprop='lowPrice']",
+    "[itemprop='highPrice']",
+    "[data-testid*='price']",
+    "[aria-label*='price' i]",
     "div[class*='Nx9bqj']",
     "div[class*='_30jeq3']",
+    "div[class*='_16Jk6d']",
 ]
 
 _FIND_PRICE_BLOCK_JS = r"""
