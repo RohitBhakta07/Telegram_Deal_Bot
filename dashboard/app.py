@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, abort
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, abort, flash
 from functools import wraps
 import sys
 import os
@@ -61,7 +61,15 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 from database import db_manager
+from runtime_env import load_runtime_env
+from secret_store import (
+    SENSITIVE_SETTING_KEYS,
+    SecretConfigurationError,
+    secret_is_configured,
+    set_secret,
+)
 
+load_runtime_env()
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 if not app.secret_key:
@@ -93,22 +101,6 @@ def login_required(f):
         session['last_activity'] = now
         return f(*args, **kwargs)
     return decorated_function
-
-
-def save_encrypted_setting(key, value):
-    """Encrypt sensitive dashboard values when ENCRYPTION_KEY is configured."""
-    encryption_key = os.environ.get('ENCRYPTION_KEY')
-    if encryption_key and value:
-        try:
-            import base64
-            from cryptography.fernet import Fernet
-            cipher = Fernet(base64.urlsafe_b64encode(
-                encryption_key.encode()[:32].ljust(32, b'0')
-            ))
-            value = cipher.encrypt(value.encode()).decode()
-        except Exception as exc:
-            print(f"Encryption failed for {key}: {exc}")
-    db_manager.update_setting(key, value)
 
 
 def _is_allowed_flipkart_url(value):
@@ -200,8 +192,9 @@ def change_password():
     if not db_manager.verify_admin(username, old_pass):
         return jsonify({"status": "error", "message": "❌ Old Password Wrong!"})
 
-    if len(new_pass) < 6:
-        return jsonify({"status": "error", "message": "New password must be at least 6 characters."})
+    valid, validation_message = db_manager.validate_admin_password(new_pass)
+    if not valid:
+        return jsonify({"status": "error", "message": validation_message})
 
     db_manager.update_admin_password(username, new_pass)
     return jsonify({"status": "success", "message": "✅ Password change successfully!"})
@@ -227,11 +220,9 @@ def index():
 @app.route('/settings')
 @login_required
 def settings():
-    api_id = db_manager.get_setting('API_ID', '')
-    api_hash = db_manager.get_setting('API_HASH', '')
-    bot_token = db_manager.get_setting('BOT_TOKEN', '')
-    extrape_affid = db_manager.get_setting('EXTRAPE_AFFID', '')
-    extrape_param1 = db_manager.get_setting('EXTRAPE_PARAM1', '')
+    secret_status = {
+        key: secret_is_configured(key) for key in SENSITIVE_SETTING_KEYS
+    }
     # ⚡ Bot Speed & Timing Settings (Defaults ke sath)
     flash_interval = db_manager.get_setting('FLASH_INTERVAL', '3')
     round_wait = db_manager.get_setting('ROUND_WAIT', '15')
@@ -251,8 +242,7 @@ def settings():
     allow_missing_buyers = db_manager.get_setting('ALLOW_MISSING_BUYERS', 'OFF')
 
     return render_template('settings.html',
-                           api_id=api_id, api_hash=api_hash, bot_token=bot_token,
-                           extrape_affid=extrape_affid, extrape_param1=extrape_param1,
+                           secret_status=secret_status,
                            flash_interval=flash_interval, round_wait=round_wait, long_sleep=long_sleep,
                            keywords_per_round=keywords_per_round,
                            default_post_format=default_post_format,
@@ -269,11 +259,22 @@ def settings():
 @csrf_required
 def save_settings():
     if request.method == 'POST':
-        save_encrypted_setting('API_ID', request.form.get('api_id'))
-        save_encrypted_setting('API_HASH', request.form.get('api_hash'))
-        save_encrypted_setting('BOT_TOKEN', request.form.get('bot_token'))
-        db_manager.update_setting('EXTRAPE_AFFID', request.form.get('extrape_affid'))
-        db_manager.update_setting('EXTRAPE_PARAM1', request.form.get('extrape_param1'))
+        secret_fields = {
+            'API_ID': 'api_id',
+            'API_HASH': 'api_hash',
+            'BOT_TOKEN': 'bot_token',
+            'EXTRAPE_AFFID': 'extrape_affid',
+            'EXTRAPE_PARAM1': 'extrape_param1',
+        }
+        try:
+            for key, field_name in secret_fields.items():
+                value = request.form.get(field_name, '').strip()
+                if value:  # Empty means keep the existing encrypted credential.
+                    set_secret(key, value)
+        except SecretConfigurationError as exc:
+            auth_logger.error(f"Secure settings save rejected: {exc}")
+            flash(str(exc), 'error')
+            return redirect(url_for('settings'))
         # Save Speed Settings
         db_manager.update_setting('FLASH_INTERVAL', request.form.get('flash_interval'))
         db_manager.update_setting('ROUND_WAIT', request.form.get('round_wait'))

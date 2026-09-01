@@ -11,14 +11,16 @@ def main():
     print(f"Current login ID: {current_username}")
 
     new_username = input("New login ID: ").strip()
-    if not new_username:
-        print("Error: login ID cannot be empty.")
+    if (not new_username or len(new_username) > 254
+            or any(ord(char) < 32 for char in new_username)):
+        print("Error: enter a valid login ID of at most 254 characters.")
         return 1
 
-    password = getpass.getpass("New password (minimum 6 characters): ")
+    password = getpass.getpass("New password (minimum 12 characters, letter + number): ")
     confirmation = getpass.getpass("Confirm new password: ")
-    if len(password) < 6:
-        print("Error: password must contain at least 6 characters.")
+    valid, validation_message = db_manager.validate_admin_password(password)
+    if not valid:
+        print(f"Error: {validation_message}")
         return 1
     if password != confirmation:
         print("Error: passwords do not match.")

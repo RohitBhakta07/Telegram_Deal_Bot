@@ -187,20 +187,16 @@ Do not expose Flask's development server directly to the public internet. Use a 
 
 ## First dashboard login
 
-On a completely new database, the application creates this temporary local account:
-
-```text
-Username: admin
-Password: admin123
-```
-
-Change it immediately. The safest reset method is:
+A new database does not create a known default password. Initialize the local
+dashboard account explicitly with:
 
 ```bash
 python reset_dashboard_login.py
 ```
 
-Enter a new login ID and a password of at least six characters, then restart `main.py`. Existing databases keep their current credentials and do not recreate the defaults.
+Enter a new login ID and a password of at least 12 characters containing a
+letter and number, then restart `main.py`. Existing databases keep their current
+credentials until this reset command is run.
 
 ## Dashboard setup checklist
 
@@ -374,6 +370,21 @@ Install Chrome/Edge or run `python -m playwright install chromium`. The browser 
 <summary><strong>Dashboard sessions reset after every restart</strong></summary>
 
 Set a stable, private `FLASK_SECRET_KEY` in `.env`. The temporary startup key is intended only for local testing.
+
+For the recommended one-time setup, run:
+
+```powershell
+python scripts/secure_local_secrets.py
+```
+
+This generates master keys outside the repository (on Windows,
+`%LOCALAPPDATA%\DealHunterBot\.env`) and migrates API, bot, and affiliate
+settings from plaintext/legacy database values to versioned Fernet ciphertext.
+Set `DEAL_HUNTER_ENV_FILE` when a deployment needs a different private path.
+The ExtraPe Telethon session is also stored under the same private OS-local
+directory rather than inside the repository.
+The dashboard never renders stored credential values back into its HTML; blank
+secret fields preserve the existing encrypted value.
 
 </details>
 

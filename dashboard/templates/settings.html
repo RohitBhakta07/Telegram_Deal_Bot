@@ -5,6 +5,14 @@
 <div class="flex-1 overflow-y-auto p-8">
     <div class="max-w-4xl mx-auto space-y-8">
 
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+        <div class="rounded-xl border p-4 text-sm font-semibold {{ 'border-red-500/40 bg-red-500/10 text-red-400' if category == 'error' else 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400' }}">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endwith %}
+
         <form action="/save_settings" method="POST" class="space-y-8">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -17,22 +25,25 @@
                 <div class="space-y-5">
                     <div>
                         <label class="text-sm font-semibold text-slate-500 mb-2 block">Bot Token</label>
-                        <input name="bot_token" value="{{ bot_token }}"
+                        <input name="bot_token" value=""
                             class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none"
-                            type="text" placeholder="123456789:ABCDEF...">
+                            type="password" autocomplete="new-password"
+                            placeholder="{{ 'Configured — leave blank to keep' if secret_status.get('BOT_TOKEN') else 'Enter bot token' }}">
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                         <div>
                             <label class="text-sm font-semibold text-slate-500 mb-2 block">API ID</label>
-                            <input name="api_id" value="{{ api_id }}"
+                            <input name="api_id" value=""
                                 class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none"
-                                type="text">
+                                type="password" autocomplete="new-password"
+                                placeholder="{{ 'Configured — leave blank to keep' if secret_status.get('API_ID') else 'Enter API ID' }}">
                         </div>
                         <div>
                             <label class="text-sm font-semibold text-slate-500 mb-2 block">API HASH</label>
-                            <input name="api_hash" value="{{ api_hash }}"
+                            <input name="api_hash" value=""
                                 class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none"
-                                type="password">
+                                type="password" autocomplete="new-password"
+                                placeholder="{{ 'Configured — leave blank to keep' if secret_status.get('API_HASH') else 'Enter API hash' }}">
                         </div>
                     </div>
                 </div>
@@ -47,15 +58,17 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
                         <label class="text-sm font-semibold text-slate-500 mb-2 block">Affiliate ID (affid)</label>
-                        <input name="extrape_affid" value="{{ extrape_affid }}"
+                        <input name="extrape_affid" value=""
                             class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none focus:border-orange-500"
-                            type="text">
+                            type="password" autocomplete="new-password"
+                            placeholder="{{ 'Configured — leave blank to keep' if secret_status.get('EXTRAPE_AFFID') else 'Enter affiliate ID' }}">
                     </div>
                     <div>
                         <label class="text-sm font-semibold text-slate-500 mb-2 block">Sub ID (affExtParam1)</label>
-                        <input name="extrape_param1" value="{{ extrape_param1 }}"
+                        <input name="extrape_param1" value=""
                             class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 font-mono text-sm outline-none focus:border-orange-500"
-                            type="text">
+                            type="password" autocomplete="new-password"
+                            placeholder="{{ 'Configured — leave blank to keep' if secret_status.get('EXTRAPE_PARAM1') else 'Enter Sub ID' }}">
                     </div>
                 </div>
             </section>
