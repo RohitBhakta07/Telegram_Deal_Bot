@@ -10,6 +10,18 @@
         rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script>
+        // Global CSRF protection for all fetch POST/PUT/DELETE requests
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        const origFetch = window.fetch;
+        window.fetch = function(url, opts = {}) {
+            if (opts.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(opts.method.toUpperCase())) {
+                opts.headers = opts.headers || {};
+                opts.headers['X-CSRF-Token'] = csrfToken;
+            }
+            return origFetch(url, opts);
+        };
+    </script>
     <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
@@ -119,10 +131,13 @@
                         </div>
                         <img alt="Admin Avatar" class="size-10 rounded-full border-2 border-primary/20 p-0.5"
                             src="https://ui-avatars.com/api/?name={{ session.get('username', 'Admin') }}&background=0da2e7&color=fff">
-                        <a href="/logout" title="Logout"
+                        <form method="POST" action="/logout">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" title="Logout"
                             class="p-2 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors">
                             <span class="material-symbols-outlined text-xl">logout</span>
-                        </a>
+                            </button>
+                        </form>
                     </div>
                 </div>
             </header>

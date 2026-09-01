@@ -131,11 +131,14 @@
                                 title="Edit Category">
                                 <span class="material-symbols-outlined text-[20px]">edit</span>
                             </button>
-                            <a href="/delete_category/{{ cat[0] }}?csrf_token={{ csrf_token() }}"
+                            <form method="POST" action="/delete_category/{{ cat[0] }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit"
                                 class="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
                                 title="Delete Category">
                                 <span class="material-symbols-outlined text-[20px]">delete</span>
-                            </a>
+                                </button>
+                            </form>
                         </div>
                     </div>
                 </div>

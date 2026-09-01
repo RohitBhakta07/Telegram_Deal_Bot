@@ -7,6 +7,7 @@ import threading
 import time as time_module
 import secrets
 import logging
+from urllib.parse import urlsplit
 
 # 🛡️ SECURITY: Set up audit log for auth events
 auth_logger = logging.getLogger('dashboard_auth')
@@ -21,18 +22,20 @@ auth_logger.propagate = False
 
 # 🛡️ SECURITY: In-memory rate limiter (login brute-force protection)
 _rate_limit_store = {}  # {ip: [timestamp1, timestamp2, ...]}
+_rate_limit_lock = threading.Lock()
 
 def _is_rate_limited(ip_key, max_attempts=5, window_seconds=60):
     """Return True if IP has exceeded max login attempts in the time window."""
     now = time_module.time()
-    if ip_key not in _rate_limit_store:
-        _rate_limit_store[ip_key] = []
-    timestamps = _rate_limit_store[ip_key]
-    timestamps[:] = [t for t in timestamps if now - t < window_seconds]
-    if len(timestamps) >= max_attempts:
-        return True
-    timestamps.append(now)
-    return False
+    with _rate_limit_lock:
+        if ip_key not in _rate_limit_store:
+            _rate_limit_store[ip_key] = []
+        timestamps = _rate_limit_store[ip_key]
+        timestamps[:] = [t for t in timestamps if now - t < window_seconds]
+        if len(timestamps) >= max_attempts:
+            return True
+        timestamps.append(now)
+        return False
 
 # 🛡️ SECURITY: CSRF token management
 def generate_csrf_token():
@@ -54,13 +57,16 @@ def csrf_required(f):
 
 # Database file path setup
 current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir) 
+parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 from database import db_manager
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24).hex())
+app.secret_key = os.environ.get('FLASK_SECRET_KEY')
+if not app.secret_key:
+    app.secret_key = os.urandom(32).hex()
+    print("WARNING: FLASK_SECRET_KEY is not set; using a temporary session key.")
 app.permanent_session_lifetime = __import__('datetime').timedelta(minutes=30)
 # 🛡️ SECURITY: Session cookie hardening
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -88,12 +94,45 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+
+def save_encrypted_setting(key, value):
+    """Encrypt sensitive dashboard values when ENCRYPTION_KEY is configured."""
+    encryption_key = os.environ.get('ENCRYPTION_KEY')
+    if encryption_key and value:
+        try:
+            import base64
+            from cryptography.fernet import Fernet
+            cipher = Fernet(base64.urlsafe_b64encode(
+                encryption_key.encode()[:32].ljust(32, b'0')
+            ))
+            value = cipher.encrypt(value.encode()).decode()
+        except Exception as exc:
+            print(f"Encryption failed for {key}: {exc}")
+    db_manager.update_setting(key, value)
+
+
+def _is_allowed_flipkart_url(value):
+    """Allow only HTTP(S) URLs hosted by Flipkart or its official short domain."""
+    try:
+        parts = urlsplit(value)
+        hostname = (parts.hostname or '').lower().rstrip('.')
+        allowed_host = (
+            hostname == 'flipkart.com'
+            or hostname.endswith('.flipkart.com')
+            or hostname == 'fkrt.it'
+            or hostname.endswith('.fkrt.it')
+        )
+        return parts.scheme.lower() in {'http', 'https'} and allowed_host
+    except (TypeError, ValueError):
+        return False
+
 # 🔒 LOGIN / LOGOUT ROUTES
 @app.route('/login', methods=['GET', 'POST'])
+@csrf_required
 def login():
     if session.get('logged_in'):
         return redirect(url_for('index'))
-    
+
     error = None
     if request.method == 'POST':
         # 🛡️ SECURITY: Rate limiting by IP
@@ -102,10 +141,14 @@ def login():
             auth_logger.warning(f"Rate limit hit for {client_ip}")
             error = "❌ Too many attempts. Please wait 60 seconds."
             return render_template('login.html', error=error)
-        
+
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
-        
+
+        if len(username) > 254 or any(ord(char) < 32 for char in username):
+            auth_logger.warning(f"Rejected malformed username from {client_ip}")
+            return render_template('login.html', error="❌ Invalid login ID.")
+
         if db_manager.verify_admin(username, password):
             session.permanent = True
             session['logged_in'] = True
@@ -119,11 +162,13 @@ def login():
         else:
             auth_logger.warning(f"Failed login attempt: user='{username}' from {client_ip}")
             error = "❌ Wrong Username ya Password!"
-    
+
     session['csrf_token'] = generate_csrf_token()
     return render_template('login.html', error=error)
 
-@app.route('/logout')
+@app.route('/logout', methods=['POST'])
+@login_required
+@csrf_required
 def logout():
     session.clear()
     return redirect(url_for('login'))
@@ -149,15 +194,15 @@ def health():
 def change_password():
     old_pass = request.form.get('old_password', '')
     new_pass = request.form.get('new_password', '')
-    
+
     username = session.get('username', 'admin')
-    
+
     if not db_manager.verify_admin(username, old_pass):
         return jsonify({"status": "error", "message": "❌ Old Password Wrong!"})
-    
-    if len(new_pass) < 4:
-        return jsonify({"status": "error", "message": "❌ new password at least 4 characters !"})
-    
+
+    if len(new_pass) < 6:
+        return jsonify({"status": "error", "message": "New password must be at least 6 characters."})
+
     db_manager.update_admin_password(username, new_pass)
     return jsonify({"status": "success", "message": "✅ Password change successfully!"})
 
@@ -170,7 +215,7 @@ def index():
     recent_deals = db_manager.get_recent_deals(15)
     channels = db_manager.get_all_channels()
     categories = db_manager.get_all_categories()
-    return render_template('index.html', 
+    return render_template('index.html',
                            bot_status=status,
                            total_deals=total_deals,
                            today_deals=today_deals,
@@ -196,7 +241,7 @@ def settings():
     default_post_format = db_manager.get_setting('DEFAULT_POST_FORMAT', 'hot_deal')
     flash_post_format = db_manager.get_setting('FLASH_POST_FORMAT', 'mega_loot')
     price_screenshot = db_manager.normalize_price_screenshot_setting(
-        db_manager.get_setting('PRICE_SCREENSHOT', 'OFF')
+        db_manager.get_setting('PRICE_SCREENSHOT', 'ON')
     )
     # 🚀 V2: Priority Queue Architecture Settings
     min_buyers_count = db_manager.get_setting('MIN_BUYERS_COUNT', '1000')
@@ -205,7 +250,7 @@ def settings():
     queue_delay_post = db_manager.get_setting('QUEUE_DELAY_POST', '15')
     allow_missing_buyers = db_manager.get_setting('ALLOW_MISSING_BUYERS', 'OFF')
 
-    return render_template('settings.html', 
+    return render_template('settings.html',
                            api_id=api_id, api_hash=api_hash, bot_token=bot_token,
                            extrape_affid=extrape_affid, extrape_param1=extrape_param1,
                            flash_interval=flash_interval, round_wait=round_wait, long_sleep=long_sleep,
@@ -224,9 +269,9 @@ def settings():
 @csrf_required
 def save_settings():
     if request.method == 'POST':
-        db_manager.update_setting('API_ID', request.form.get('api_id'))
-        db_manager.update_setting('API_HASH', request.form.get('api_hash'))
-        db_manager.update_setting('BOT_TOKEN', request.form.get('bot_token'))
+        save_encrypted_setting('API_ID', request.form.get('api_id'))
+        save_encrypted_setting('API_HASH', request.form.get('api_hash'))
+        save_encrypted_setting('BOT_TOKEN', request.form.get('bot_token'))
         db_manager.update_setting('EXTRAPE_AFFID', request.form.get('extrape_affid'))
         db_manager.update_setting('EXTRAPE_PARAM1', request.form.get('extrape_param1'))
         # Save Speed Settings
@@ -238,7 +283,7 @@ def save_settings():
         db_manager.update_setting('DEFAULT_POST_FORMAT', request.form.get('default_post_format', 'hot_deal'))
         db_manager.update_setting('FLASH_POST_FORMAT', request.form.get('flash_post_format', 'mega_loot'))
         price_ss = db_manager.normalize_price_screenshot_setting(
-            request.form.get('price_screenshot', 'OFF')
+            request.form.get('price_screenshot', 'ON')
         )
         db_manager.update_setting('PRICE_SCREENSHOT', price_ss)
         # 🚀 V2: Priority Queue Architecture Settings
@@ -252,7 +297,7 @@ def save_settings():
 
         return redirect(url_for('settings'))
 
-# 3. Channels Page 
+# 3. Channels Page
 @app.route('/channels')
 @login_required
 def channels():
@@ -269,26 +314,18 @@ def add_channel():
         db_manager.add_channel(channel_id, channel_name)
     return redirect(url_for('channels'))
 
-@app.route('/delete_channel/<channel_id>', methods=['GET', 'POST'])
+@app.route('/delete_channel/<channel_id>', methods=['POST'])
 @login_required
+@csrf_required
 def delete_channel(channel_id):
-    # 🛡️ SECURITY: Validate channel_id is alphanumeric + dash
-    if not channel_id or any(c not in '-0123456789' for c in channel_id if c != '-'):
+    channel_id = channel_id.strip()
+    if not channel_id or len(channel_id) > 100:
         return jsonify({"status": "error", "message": "Invalid channel ID"}), 400
-    # 🛡️ SECURITY: CSRF check for POST; for GET links validate via query param token
-    if request.method == 'POST':
-        token = request.form.get('csrf_token')
-    else:
-        token = request.args.get('csrf_token')
-    stored = session.get('csrf_token')
-    if not stored or not token or not secrets.compare_digest(stored, token):
-        auth_logger.warning(f"CSRF violation on delete_channel from {request.remote_addr}")
-        return jsonify({"status": "error", "message": "CSRF validation failed"}), 403
     db_manager.delete_channel(channel_id)
     return redirect(url_for('channels'))
 
 # ==========================================
-# 4. CATEGORIES MANAGEMENT 
+# 4. CATEGORIES MANAGEMENT
 # ==========================================
 @app.route('/categories')
 @login_required
@@ -301,7 +338,7 @@ def categories():
 @csrf_required
 def add_category():
     name = request.form.get('name')
-    keywords = request.form.get('keywords') 
+    keywords = request.form.get('keywords')
     min_discount = request.form.get('min_discount')
     priority = request.form.get('priority', 'MEDIUM')
     post_format = request.form.get('post_format', 'default')
@@ -309,18 +346,10 @@ def add_category():
         db_manager.add_category(name, keywords, int(min_discount), priority, post_format)
     return redirect(url_for('categories'))
 
-@app.route('/delete_category/<cat_id>', methods=['GET', 'POST'])
+@app.route('/delete_category/<int:cat_id>', methods=['POST'])
 @login_required
+@csrf_required
 def delete_category(cat_id):
-    # 🛡️ SECURITY: CSRF check for GET-based delete
-    if request.method == 'POST':
-        token = request.form.get('csrf_token')
-    else:
-        token = request.args.get('csrf_token')
-    stored = session.get('csrf_token')
-    if not stored or not token or not secrets.compare_digest(stored, token):
-        auth_logger.warning(f"CSRF violation on delete_category from {request.remote_addr}")
-        return jsonify({"status": "error", "message": "CSRF validation failed"}), 403
     db_manager.delete_category(cat_id)
     return redirect(url_for('categories'))
 
@@ -352,23 +381,15 @@ def flash_deals():
 def add_flash():
     keyword = request.form.get('keyword')
     min_discount = request.form.get('min_discount')
-    
+
     if keyword and min_discount:
         db_manager.add_flash_keyword(keyword.strip().lower(), int(min_discount))
     return redirect(url_for('flash_deals'))
 
-@app.route('/delete_flash/<int:keyword_id>', methods=['GET', 'POST'])
+@app.route('/delete_flash/<int:keyword_id>', methods=['POST'])
 @login_required
+@csrf_required
 def delete_flash(keyword_id):
-    # 🛡️ SECURITY: CSRF check for GET-based delete
-    if request.method == 'POST':
-        token = request.form.get('csrf_token')
-    else:
-        token = request.args.get('csrf_token')
-    stored = session.get('csrf_token')
-    if not stored or not token or not secrets.compare_digest(stored, token):
-        auth_logger.warning(f"CSRF violation on delete_flash from {request.remote_addr}")
-        return jsonify({"status": "error", "message": "CSRF validation failed"}), 403
     db_manager.delete_flash_keyword(keyword_id)
     return redirect(url_for('flash_deals'))
 
@@ -378,7 +399,7 @@ def delete_flash(keyword_id):
 def edit_flash(keyword_id):
     keyword = request.form.get('keyword')
     min_discount = request.form.get('min_discount')
-    
+
     if keyword and min_discount:
         db_manager.update_flash_keyword(keyword_id, keyword.strip().lower(), int(min_discount))
     return redirect(url_for('flash_deals'))
@@ -401,63 +422,54 @@ def instant_post_send():
     """
     product_url = request.form.get('product_url', '').strip()
     post_format = request.form.get('post_format', 'default')
-    
+
     if not product_url:
         return jsonify({"status": "error", "message": "❌ Link khali hai! Flipkart ka link paste karo."})
-    
-    if 'flipkart.com' not in product_url and 'fkrt.it' not in product_url:
+
+    if not _is_allowed_flipkart_url(product_url):
         return jsonify({"status": "error", "message": "❌ Yeh Flipkart ka link nahi hai! Sirf Flipkart links paste karo."})
-    
+
     def process_instant_post(url, chosen_format):
         try:
             from scraper.flipkart import scrape_single_product
             from telegram.post_format import build_deal_message, resolve_post_format
             from telegram.bot import send_telegram_deal_post
-            from telegram.deal_media import post_deal_message
-            
+            from telegram.deal_media import post_deal_message, cleanup_deal_media
+            from config import EXTRAPE_AFFID, EXTRAPE_PARAM1
+
             print(f"\n🚀 [INSTANT POST] Processing: {url[:60]}...")
-            
+
             # 1. Product page scrape karo
             deal = scrape_single_product(url)
-            
+
             if not deal:
                 print("❌ [INSTANT POST] Product scrape fail hua. Link check karo.")
                 return
-            
-            # 2. Affiliate link generate karo (main.py ka proven logic copy)
-            print("🕵️‍♂️ [INSTANT POST] Affiliate link generate kar rahe hain...")
-            affiliate_link = url  # Default: original link
-            
-            # Method 1: ExtraPe Bot se try karo
+
+            print("[INSTANT POST] Generating affiliate link...")
+            affiliate_link = url
             try:
                 from userbot.extrape_agent import get_sync_link
                 agent_link = get_sync_link(url)
                 if agent_link and agent_link != url:
-                    print(f"✅ [INSTANT POST] Agent ne link convert kar diya: {agent_link[:50]}...")
                     affiliate_link = agent_link
                 else:
-                    print("⚠️ [INSTANT POST] Agent ne same link return kiya. Backup try karunga...")
                     raise Exception("Agent returned same link")
-            except Exception as e:
-                print(f"⚠️ [INSTANT POST] Agent error: {e}")
-                # Method 2: TinyURL Backup
+            except Exception:
                 try:
-                    from config import EXTRAPE_AFFID, EXTRAPE_PARAM1
-                    import requests as req
-                    affiliate_params = f"&&affid={EXTRAPE_AFFID}&affExtParam1={EXTRAPE_PARAM1}"
-                    final_long_url = f"{url}{affiliate_params}"
-                    api_url = f"http://tinyurl.com/api-create.php?url={final_long_url}"
-                    resp = req.get(api_url, timeout=8)
-                    if resp.status_code == 200:
-                        affiliate_link = resp.text
-                        print(f"✅ [INSTANT POST] Backup TinyURL se link ban gaya!")
-                    else:
-                        affiliate_link = final_long_url
-                        print(f"⚠️ [INSTANT POST] TinyURL fail, long affiliate link use karunga")
-                except Exception as e2:
-                    print(f"❌ [INSTANT POST] Backup bhi fail: {e2}. Original link use karunga.")
-                    affiliate_link = url
-            
+                    if not EXTRAPE_AFFID:
+                        raise ValueError("EXTRAPE_AFFID is not configured")
+                    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+                    parts = urlsplit(url)
+                    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+                    query["affid"] = EXTRAPE_AFFID
+                    query["affExtParam1"] = EXTRAPE_PARAM1
+                    affiliate_link = urlunsplit(
+                        (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+                    )
+                except Exception:
+                    pass
+
             fmt = resolve_post_format(
                 is_flash=False,
                 category_format=chosen_format,
@@ -465,45 +477,49 @@ def instant_post_send():
                 flash_format=db_manager.get_setting('FLASH_POST_FORMAT', 'mega_loot'),
             )
             message = build_deal_message(deal, affiliate_link, fmt)
-            
-            # 4. Saare channels par post karo
+
             try:
                 channels = db_manager.get_all_channels()
-            except:
+            except Exception:
                 channels = []
-                
             if not channels:
-                print("⚠️ [INSTANT POST] Koi channel add nahi hai!")
+                print("[INSTANT POST] No channels configured!")
                 return
-            
-            for channel in channels:
-                try:
-                    post_deal_message(send_telegram_deal_post, channel[0], message, deal)
-                except Exception as e:
-                    print(f"❌ [INSTANT POST] Channel {channel[0]} par send fail: {e}")
-            
-            # 5. DB mein save karo
+
+            sent_count = 0
             try:
-                db_manager.save_deal(
-                    title=deal['title'],
-                    original_link=url,
-                    affiliate_link=affiliate_link,
-                    category="INSTANT POST",
-                    product_image=deal.get('image', ''),
-                    post_type="instant"
-                )
-            except:
-                pass
-                
-            print(f"✅ [INSTANT POST] Deal posted successfully: {deal['title'][:40]}...")
-            
+                for channel in channels:
+                    try:
+                        result = post_deal_message(
+                            send_telegram_deal_post, channel[0], message, deal
+                        )
+                        if result:
+                            sent_count += 1
+                    except Exception as exc:
+                        print(f"[INSTANT POST] Channel {channel[0]} failed: {exc}")
+
+                if sent_count:
+                    db_manager.save_deal(
+                        title=deal['title'],
+                        original_link=url,
+                        affiliate_link=affiliate_link,
+                        category="INSTANT POST",
+                        product_image=deal.get('image', ''),
+                        post_type="instant",
+                    )
+                    print(f"[INSTANT POST] Deal posted: {deal['title'][:40]}...")
+                else:
+                    print("[INSTANT POST] Two-photo delivery failed; deal not marked sent.")
+            finally:
+                cleanup_deal_media(deal)
+
         except Exception as e:
-            print(f"❌ [INSTANT POST] Error: {e}")
-    
+            print(f"[INSTANT POST] Error: {e}")
+
     # Background thread mein chalao taaki bot loop na ruke
     thread = threading.Thread(target=process_instant_post, args=(product_url, post_format), daemon=True)
     thread.start()
-    
+
     return jsonify({"status": "success", "message": "🚀 Processing shuru ho gaya! 10-15 sec mein Telegram par post ho jayega."})
 
 # ==========================================
@@ -537,14 +553,14 @@ def live_console():
 @login_required
 def get_logs():
     log_file_path = os.path.join(parent_dir, 'bot.log')
-    
+
     if not os.path.exists(log_file_path):
         return "⏳ Bot start ho raha hai... Logs abhi aana baaki hain."
-    
+
     try:
         with open(log_file_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-            return "".join(lines[-100:]) 
+            return "".join(lines[-100:])
     except Exception as e:
         return f"Error reading logs: {str(e)}"
 

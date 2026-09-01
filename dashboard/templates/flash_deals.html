@@ -102,11 +102,14 @@
                                 title="Edit Target">
                                 <span class="material-symbols-outlined text-[18px]">edit</span>
                             </button>
-                            <a href="/delete_flash/{{ item[0] }}?csrf_token={{ csrf_token() }}"
+                            <form method="POST" action="/delete_flash/{{ item[0] }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit"
                                 class="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
                                 title="Remove Target">
                                 <span class="material-symbols-outlined text-[18px]">delete</span>
-                            </a>
+                                </button>
+                            </form>
                         </div>
                     </div>
                 </div>

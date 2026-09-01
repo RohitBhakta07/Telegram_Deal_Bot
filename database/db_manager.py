@@ -1,50 +1,70 @@
 import sqlite3
 import os
 import time
-import hashlib
 import random
-import secrets
+import threading
+import bcrypt
+import hashlib
+import hmac
 
 # Database file path setup
 DB_PATH = os.path.join(os.path.dirname(__file__), 'bot_data.db')
 
-# 🛡️ HOSTING FIX: Thread-safe connection wrapper with auto-retry for locked DB
+# Connection pool for thread safety
+_connection_cache = threading.local()
+
 def _get_connection(retries=3):
-    """SQLite connection with retry logic, WAL mode, and security pragmas."""
+    """SQLite connection with retry logic and per-thread caching."""
+    if hasattr(_connection_cache, 'conn'):
+        try:
+            _connection_cache.conn.execute("SELECT 1")
+            return _connection_cache.conn
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+            pass
     for attempt in range(retries):
         try:
-            conn = sqlite3.connect(DB_PATH, timeout=10)
+            conn = sqlite3.connect(DB_PATH, timeout=15)
             _enable_secure_db_pragmas(conn)
+            _connection_cache.conn = conn
             return conn
         except sqlite3.OperationalError as e:
             if attempt < retries - 1:
-                time.sleep(1)
+                time.sleep(0.5)
             else:
                 raise e
 
 def _enable_secure_db_pragmas(conn):
-    """Enable WAL mode and security-related pragmas on connection."""
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA temp_store=MEMORY")
-        # 🛡️ SECURITY: Limit DB file access to owner only
-        # Windows doesn't support chmod, but the PRAGMA settings help
-        conn.execute("PRAGMA secure_delete=ON")
-    except Exception:
-        pass
+    """Enable durability and privacy-related SQLite options."""
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA secure_delete=ON")
 
-def _hash_password(password, salt=None):
-    """SHA-256 + per-user salt se password hash karo"""
-    if salt is None:
-        salt = secrets.token_hex(16)
-    hashed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
-    return f"{salt}${hashed}"
+def _hash_password(password):
+    """bcrypt password hashing with built-in salt."""
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
+
+def _check_password(password, stored_hash):
+    """Verify bcrypt plus older PBKDF2/SHA-256 hashes during migration."""
+    try:
+        if stored_hash.startswith(("$2a$", "$2b$", "$2y$")):
+            return bcrypt.checkpw(password.encode(), stored_hash.encode())
+        if '$' in stored_hash:
+            salt, expected = stored_hash.split('$', 1)
+            computed = hashlib.pbkdf2_hmac(
+                'sha256', password.encode(), salt.encode(), 100000
+            ).hex()
+            return hmac.compare_digest(computed, expected)
+        computed = hashlib.sha256(password.encode()).hexdigest()
+        return hmac.compare_digest(computed, stored_hash)
+    except Exception:
+        return False
 
 def init_db():
     conn = _get_connection()
     cursor = conn.cursor()
-    
+
     # 1. Sent Deals Table (History record ke liye)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sent_deals (
@@ -56,7 +76,7 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     # 2. Channels Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS channels (
@@ -65,7 +85,7 @@ def init_db():
             channel_name TEXT
         )
     ''')
-    
+
     # 3. Settings Table (API IDs aur Tokens ke liye)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
@@ -73,18 +93,18 @@ def init_db():
             value TEXT
         )
     ''')
-    
+
     # 4. Categories Table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            name TEXT, 
-            keywords TEXT, 
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            keywords TEXT,
             min_discount INTEGER,
             priority TEXT DEFAULT 'MEDIUM'
         )
     ''')
-    
+
     # 5. Flash Keywords Table (Ninja Sniper ke liye)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS flash_keywords (
@@ -93,7 +113,7 @@ def init_db():
             min_discount INTEGER NOT NULL
         )
     ''')
-    
+
     # 6. 🔒 Admin Users Table (Dashboard Login)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS admin_users (
@@ -102,12 +122,12 @@ def init_db():
             password_hash TEXT NOT NULL
         )
     ''')
-    
+
     # Default admin create karo agar nahi hai
     cursor.execute("SELECT COUNT(*) FROM admin_users")
     if cursor.fetchone()[0] == 0:
         default_hash = _hash_password("admin123")
-        cursor.execute("INSERT INTO admin_users (username, password_hash) VALUES (?, ?)", 
+        cursor.execute("INSERT INTO admin_users (username, password_hash) VALUES (?, ?)",
                        ("admin", default_hash))
         print("🔒 Default admin created → Username: admin | Password: admin123")
 
@@ -137,7 +157,7 @@ def init_db():
 
     # Default settings (INSERT OR IGNORE — restart par saved value overwrite nahi hogi)
     default_settings = {
-        'PRICE_SCREENSHOT': 'OFF',
+        'PRICE_SCREENSHOT': 'ON',
         'DEFAULT_POST_FORMAT': 'hot_deal',
         'FLASH_POST_FORMAT': 'mega_loot',
         'bot_status': 'ON',
@@ -157,6 +177,14 @@ def init_db():
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
             (key, value),
         )
+
+    # Performance indexes
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sent_deals_link ON sent_deals(original_link)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sent_deals_timestamp ON sent_deals(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key)")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()
@@ -180,24 +208,12 @@ def _category_priority(cat):
     return cat[4] if len(cat) > 4 else 'MEDIUM'
 
 def order_categories_by_priority(categories):
-    """Weighted shuffle: HIGH categories appear more often at the front of the list."""
-    weighted = []
-    for cat in categories:
-        priority = _category_priority(cat)
-        weighted.extend([cat] * get_priority_weight(priority))
-    random.shuffle(weighted)
-
-    ordered = []
-    seen_names = set()
-    for cat in weighted:
-        name = cat[1]
-        if name not in seen_names:
-            ordered.append(cat)
-            seen_names.add(name)
-    for cat in categories:
-        if cat[1] not in seen_names:
-            ordered.append(cat)
-    return ordered
+    """Return categories in deterministic HIGH → MEDIUM → LOW order."""
+    return sorted(
+        categories,
+        key=lambda cat: get_priority_weight(_category_priority(cat)),
+        reverse=True,
+    )
 
 def build_keyword_weights(categories):
     """Map each keyword to its highest priority weight across categories."""
@@ -227,21 +243,10 @@ def verify_admin(username, password):
         cursor = conn.cursor()
         cursor.execute("SELECT password_hash FROM admin_users WHERE username=?", (username,))
         result = cursor.fetchone()
-        if result:
-            stored = result[0]
-            # 🛡️ SECURITY: Support both salted (new) and unsalted (legacy) hashes
-            if '$' in stored:
-                # New format: salt$hash
-                salt, stored_hash = stored.split('$', 1)
-                computed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
-                if computed == stored_hash:
-                    return True
-            else:
-                # Legacy format: bare SHA-256
-                if stored == hashlib.sha256(password.encode()).hexdigest():
-                    # Upgrade to salted hash on successful login
-                    upgrade_admin_password(username, password)
-                    return True
+        if result and _check_password(password, result[0]):
+            if not result[0].startswith(("$2a$", "$2b$", "$2y$")):
+                upgrade_admin_password(username, password)
+            return True
         return False
     finally:
         conn.close()
@@ -251,7 +256,7 @@ def update_admin_password(username, new_password):
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE admin_users SET password_hash=? WHERE username=?", 
+        cursor.execute("UPDATE admin_users SET password_hash=? WHERE username=?",
                        (_hash_password(new_password), username))
         conn.commit()
         return cursor.rowcount > 0
@@ -263,7 +268,7 @@ def upgrade_admin_password(username, password):
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE admin_users SET password_hash=? WHERE username=?", 
+        cursor.execute("UPDATE admin_users SET password_hash=? WHERE username=?",
                        (_hash_password(password), username))
         conn.commit()
     finally:
@@ -349,7 +354,7 @@ def add_flash_keyword(keyword, min_discount):
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO flash_keywords (keyword, min_discount) VALUES (?, ?)", 
+        cursor.execute("INSERT INTO flash_keywords (keyword, min_discount) VALUES (?, ?)",
                        (keyword, min_discount))
         conn.commit()
     finally:
@@ -378,7 +383,7 @@ def update_flash_keyword(keyword_id, keyword, min_discount):
     conn = _get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE flash_keywords SET keyword=?, min_discount=? WHERE id=?", 
+        cursor.execute("UPDATE flash_keywords SET keyword=?, min_discount=? WHERE id=?",
                        (keyword, min_discount, keyword_id))
         conn.commit()
     finally:

@@ -1,8 +1,6 @@
-# ═══════════════════════════════════════════
-# Deal Hunter Bot — .gitignore
-# ═══════════════════════════════════════════
+# Deal Hunter Bot - .gitignore
 
-# ── Python ──────────────────────────────────
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -11,33 +9,52 @@ dist/
 build/
 venv/
 .venv/
-.pytest_cache/
-
-# ── Secrets & Credentials (NEVER PUSH) ─────
+.python-version
 .env
-*.session
-*.session-journal
-userbot/extrape_session/
+.env.*
+!.env.example
+
+# Sensitive Data (NEVER PUSH)
 database/bot_data.db
+userbot/extrape_session.session
+userbot/extrape_session.session-journal
+userbot/extrape_session/
+scraper/cookies.json
+cookies.json
+bot.log
+*.log
+auth_audit.log
 *.db-shm
 *.db-wal
-auth_audit.log
+temp_screenshots/
+temp_media_frames/
+tmp/
+output/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.session
+*.session-journal
 
-# ── Environment / Config ────────────────────
+# Browser/test artifacts
+playwright-report/
+test-results/
+trace.zip
+
+# Deployment-local configuration
 .production
 
-# ── Runtime Artifacts ───────────────────────
-bot.log
-temp_screenshots/
-
-# ── IDE ─────────────────────────────────────
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# ── OS ──────────────────────────────────────
+# OS
 .DS_Store
 Thumbs.db
 Desktop.ini

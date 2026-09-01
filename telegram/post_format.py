@@ -2,6 +2,7 @@
 Telegram post formats + smaller product images.
 """
 import re
+import html
 
 TELEGRAM_PHOTO_CAPTION_MAX = 1024
 
@@ -51,19 +52,13 @@ def resolve_post_format(
 
 def build_deal_message(deal, affiliate_link, fmt=FORMAT_HOT_DEAL):
     """Build caption — original style, no highlights block."""
-    title = deal.get("title", "Deal")
-    mrp = deal.get("mrp", "")
-    price = deal.get("price", "")
-    discount = deal.get("discount", "")
-    rating = deal.get("rating", "")
-    buyers = deal.get("buyers_count", 0)
-
-    # Rating display: "New/Unrated (0+ bought)" if no rating
-    rating_str = str(rating).strip()
-    if not rating_str or rating_str in ("0", "0.0", "", "N/A"):
-        rating_display = f"🆕 New/Unrated ({buyers}+ bought)"
-    else:
-        rating_display = f"⭐ {rating_str} ({buyers}+ bought)"
+    title = html.escape(str(deal.get("title", "Deal")))
+    mrp = html.escape(str(deal.get("mrp", "")))
+    price = html.escape(str(deal.get("price", "")))
+    discount = html.escape(str(deal.get("discount", "")))
+    rating = html.escape(str(deal.get("rating") or "New / Unrated"))
+    # Show the real ExtraPe/fallback affiliate URL. Do not hide it behind anchor text.
+    buy_link = html.escape(str(affiliate_link or deal.get("link", "")), quote=False)
 
     if fmt == FORMAT_MEGA_LOOT:
         return f"""🚨 <b>MEGA LOOT ALERT | PRICE DROP</b> 🚨
@@ -73,10 +68,9 @@ def build_deal_message(deal, affiliate_link, fmt=FORMAT_HOT_DEAL):
 💰 <b>MRP : </b> <del>{mrp}</del>
 💸 <b>Loot Price : </b> {price}
 📉 <b>Flat {discount}</b>
-{rating_display}
 
 👉 <b>Loot Fast (Stock ends in mins): 👇</b> 
-{affiliate_link}
+{buy_link}
 
 ⚡ <b>Flash Deal:</b> Yeh deal kisi bhi waqt Sold Out ho sakti hai!"""
 
@@ -89,8 +83,8 @@ def build_deal_message(deal, affiliate_link, fmt=FORMAT_HOT_DEAL):
 📉 <b>Flat {discount}</b>
 
 👉 <b>Check price on Flipkart: 👇</b> 
-{affiliate_link}
+{buy_link}
 
-{rating_display}
+⭐ <b>Rating : </b> {rating}
 ⚡ Limited time deal
 ⏳ Stock fast finish hota hai!"""

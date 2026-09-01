@@ -138,17 +138,16 @@
                     <h3 class="text-xl font-bold text-slate-900 dark:text-white">Price Tag Screenshot</h3>
                 </div>
                 <p class="text-xs text-slate-400 mb-4">
-                    ON = <b>2 photos</b> Telegram par: (1) product photo + (2) Flipkart price tag screenshot.
-                    Setting <b>database mein save</b> hoti hai — bot restart ke baad bhi same rahegi (Save All Settings zaroor dabao).
-                    Har deal par ~10–20 sec extra. Fail hone par sirf product photo.
+                    Professional mode mein har deal <b>exactly 2 matching photos</b> ke album mein jayegi:
+                    (1) actual product frame + (2) verified Flipkart price-proof frame.
+                    Proof/frame fail hua to single photo bhejne ke bajay post hold rahegi.
                 </p>
                 <div class="flex flex-col gap-2 max-w-md">
-                    <label class="text-sm font-semibold text-slate-500">Price screenshot on posts</label>
-                    <select name="price_screenshot"
-                        class="w-full bg-slate-50 dark:bg-[#1b2327] border border-slate-200 dark:border-slate-700 rounded-xl p-3 outline-none focus:border-amber-500">
-                        <option value="OFF" {% if price_screenshot != 'ON' %}selected{% endif %}>OFF — Product photo only (faster)</option>
-                        <option value="ON" {% if price_screenshot == 'ON' %}selected{% endif %}>ON — Price tag screenshot (more trust)</option>
-                    </select>
+                    <label class="text-sm font-semibold text-slate-500">Two-photo professional album</label>
+                    <input type="hidden" name="price_screenshot" value="ON">
+                    <div class="w-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-800 rounded-xl p-3 font-semibold text-emerald-700 dark:text-emerald-300">
+                        ALWAYS ON — Product + live price proof
+                    </div>
                 </div>
             </section>
 
@@ -258,6 +257,7 @@ document.getElementById('password-form').addEventListener('submit', async functi
     const msgBox = document.getElementById('password-msg');
     
     const formData = new FormData();
+    formData.append('csrf_token', '{{ csrf_token() }}');
     formData.append('old_password', oldPass);
     formData.append('new_password', newPass);
     

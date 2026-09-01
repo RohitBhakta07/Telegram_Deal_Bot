@@ -51,7 +51,7 @@
           </div>
           <div class="flex items-center gap-2 mt-1">
             <!-- Copy Original Link -->
-            <button onclick="copyLink('{{ original_link|e }}')"
+            <button onclick='copyLink({{ original_link|tojson }}, this)'
                     class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-[#1b2327] text-slate-600 dark:text-slate-300 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all">
               <span class="material-symbols-outlined text-sm">content_copy</span> Copy Link
             </button>
@@ -137,9 +137,8 @@
 </div>
 
 <script>
-function copyLink(url) {
+function copyLink(url, btn) {
   navigator.clipboard.writeText(url).then(() => {
-    const btn = event.currentTarget;
     const original = btn.innerHTML;
     btn.innerHTML = '<span class="material-symbols-outlined text-sm">check</span> Copied!';
     btn.classList.add('text-emerald-500', 'bg-emerald-500/10');
