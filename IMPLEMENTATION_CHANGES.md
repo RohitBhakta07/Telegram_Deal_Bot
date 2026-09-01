@@ -154,9 +154,41 @@ Keyword attempt/yield state is persisted and recovered, so future rounds learn f
 
 ## 10. Dashboard and login changes
 
-- Dashboard sessions use `FLASK_SECRET_KEY`; a temporary key warning remains when it is not configured.
+- `scripts/secure_local_secrets.py` generates private 64-character
+  `FLASK_SECRET_KEY` and `ENCRYPTION_KEY` values outside the repository
+  (`%LOCALAPPDATA%\DealHunterBot\.env` on Windows, or the platform config
+  directory elsewhere). This avoids both Git tracking and OneDrive project sync.
+- `API_ID`, `API_HASH`, `BOT_TOKEN`, `EXTRAPE_AFFID`, and `EXTRAPE_PARAM1`
+  are stored in SQLite as versioned Fernet ciphertext (`enc:v1:`), never as
+  new plaintext values.
+- Existing plaintext and legacy Fernet database values are migrated
+  transactionally after a master key is configured.
+- The credential-equivalent Telethon authorization session is stored alongside
+  the private OS-local configuration instead of under the Git/OneDrive project.
+  The setup script copies a legacy session and verifies its size before cleanup.
+- Credential reads fail closed when `ENCRYPTION_KEY` is missing or incorrect.
+- Dashboard secret fields are always rendered empty. They show only a
+  configured/not-configured placeholder, so stored credentials are not sent
+  back to the browser. Leaving a field blank preserves its current value.
+- Dashboard sessions use the persistent `FLASK_SECRET_KEY`; a temporary key is
+  used only when local security setup has not yet been completed.
+- New databases have no predictable `admin/admin123` login. A random bootstrap
+  password is discarded, and `reset_dashboard_login.py` must initialize access.
+- Password updates enforce at least 12 characters with a letter and number in
+  both the dashboard and database layer.
 - The settings page clearly shows that the professional two-photo album is always enabled.
 - `reset_dashboard_login.py` safely changes both the dashboard login ID and password without manual SQLite commands or Python REPL indentation.
+
+Run the one-time local security setup before starting the bot:
+
+```powershell
+python scripts/secure_local_secrets.py
+```
+
+The setup command never prints a credential. `DEAL_HUNTER_ENV_FILE` can select
+another private configuration path for deployments. A repository `.env` remains
+a backwards-compatible fallback only. Restart `main.py` afterward so all
+processes load the new master keys and decrypted runtime values.
 
 Reset command:
 
@@ -193,6 +225,9 @@ Restart the dashboard after a login reset so old sessions are cleared.
 | `dashboard/templates/settings.html` | Always-on professional album status. |
 | `database/db_manager.py` | Settings, login, state and keyword-stat persistence. |
 | `reset_dashboard_login.py` | Safe local dashboard credential reset. |
+| `secret_store.py` | Versioned Fernet encryption, decryption and legacy migration. |
+| `runtime_env.py` | Loads OS-local configuration outside the repository. |
+| `scripts/secure_local_secrets.py` | Generates master keys and migrates credentials/session state. |
 | `requirements.txt` | Includes frame-generation and runtime dependencies. |
 
 ## 13. Tests and verification
@@ -209,6 +244,9 @@ Added or extended tests cover:
 - MRP/discount isolation from similar products;
 - smart keyword scoring, diversity, and history;
 - parser, fake-drop, database, selector, and ExtraPe behavior.
+- encrypted credential round-trips and plaintext migration;
+- fail-closed reads without a master key;
+- prevention of credential rendering in dashboard HTML.
 
 The latest media/caption and product-data test groups passed, and the changed Python source completed compilation checks. A real Telegram dummy post was intentionally not sent to the production channel.
 
@@ -271,3 +309,14 @@ The following must remain uncommitted:
 - temporary QA files.
 
 `.env.example`, source files, tests, and this document remain trackable.
+
+### Historical credential exposure
+
+Older repository commits contained `database/bot_data.db`, `bot.log`, and a
+Telethon `.session` file. Ignoring them now prevents new commits but cannot
+invalidate copies already present in Git history. Treat all credentials and
+sessions stored at that time as compromised: regenerate the Telegram bot
+token, terminate old Telegram/Telethon sessions, replace API credentials where
+possible, rotate ExtraPe access, and reset the dashboard login. History cleanup
+is defense-in-depth and must happen only after rotation; rewriting Git history
+alone does not make an exposed credential safe again.

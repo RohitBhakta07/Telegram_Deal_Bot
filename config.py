@@ -1,50 +1,30 @@
 import os
 import sys
-import base64
-from dotenv import load_dotenv
+from secret_store import SecretConfigurationError, get_secret
+from runtime_env import load_runtime_env, private_data_dir
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+load_runtime_env()
 
-def safe_get(key, default=""):
+def _load_secret(key):
     try:
-        val = os.getenv(key)
-        if val:
-            return val
-        from database.db_manager import get_setting
-        val = get_setting(key)
-        return val if val else default
-    except:
-        return default
+        return get_secret(key)
+    except SecretConfigurationError as exc:
+        print(f"SECURITY CONFIG ERROR ({key}): {exc}")
+        return ""
 
-# Encrypted settings (read from DB with Fernet decryption)
-def safe_get_encrypted(key, default=""):
-    """Read encrypted setting from DB, decrypt with key from env."""
-    try:
-        encryption_key = os.environ.get('ENCRYPTION_KEY')
-        if not encryption_key:
-            return safe_get(key, default)
-        from cryptography.fernet import Fernet
-        cipher = Fernet(base64.urlsafe_b64encode(encryption_key.encode()[:32].ljust(32, b'0')))
-        from database.db_manager import get_setting
-        encrypted = get_setting(key)
-        if encrypted:
-            return cipher.decrypt(encrypted.encode()).decode()
-    except Exception:
-        pass
-    return safe_get(key, default)
 
-API_ID = safe_get('API_ID')
-API_HASH = safe_get('API_HASH')
-BOT_TOKEN = safe_get('BOT_TOKEN')
-EXTRAPE_AFFID = safe_get('EXTRAPE_AFFID')
-EXTRAPE_PARAM1 = safe_get('EXTRAPE_PARAM1')
+API_ID = _load_secret('API_ID')
+API_HASH = _load_secret('API_HASH')
+BOT_TOKEN = _load_secret('BOT_TOKEN')
+EXTRAPE_AFFID = _load_secret('EXTRAPE_AFFID')
+EXTRAPE_PARAM1 = _load_secret('EXTRAPE_PARAM1')
 
 DB_PATH = os.path.join(BASE_DIR, 'database', 'bot_data.db')
-SESSION_PATH = os.path.join(BASE_DIR, 'userbot', 'extrape_session')
+SESSION_PATH = str(private_data_dir() / 'sessions')
 
 if not BOT_TOKEN or not API_ID:
     print("Warning: Dashboard mein API keys save nahi hain!")

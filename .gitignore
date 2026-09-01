@@ -16,6 +16,7 @@ venv/
 
 # Sensitive Data (NEVER PUSH)
 database/bot_data.db
+database/*.db*
 userbot/extrape_session.session
 userbot/extrape_session.session-journal
 userbot/extrape_session/

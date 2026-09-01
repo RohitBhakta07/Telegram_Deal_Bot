@@ -32,9 +32,9 @@ class TestInit:
 
 
 class TestAuthentication:
-    def test_verify_admin_default(self, temp_db):
-        """Default admin/admin123 should work."""
-        assert db_manager.verify_admin('admin', 'admin123')
+    def test_default_admin_has_no_known_password(self, temp_db):
+        """Fresh databases must not expose a predictable login."""
+        assert not db_manager.verify_admin('admin', 'admin123')
 
     def test_verify_wrong_password(self, temp_db):
         """Wrong password should fail."""
@@ -50,10 +50,9 @@ class TestAuthentication:
         assert db_manager.verify_admin('admin', 'newpassword123')
         assert not db_manager.verify_admin('admin', 'admin123')
 
-    def test_password_min_length(self, temp_db):
-        """Very short passwords should still work (handled in app)."""
-        db_manager.update_admin_password('admin', 'ab')
-        assert db_manager.verify_admin('admin', 'ab')
+    def test_password_policy_is_enforced_in_database_layer(self, temp_db):
+        with pytest.raises(ValueError):
+            db_manager.update_admin_password('admin', 'ab')
 
 
 class TestCategories:

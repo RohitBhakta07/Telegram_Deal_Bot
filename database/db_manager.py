@@ -6,6 +6,7 @@ import threading
 import bcrypt
 import hashlib
 import hmac
+import secrets
 
 # Database file path setup
 DB_PATH = os.path.join(os.path.dirname(__file__), 'bot_data.db')
@@ -60,6 +61,19 @@ def _check_password(password, stored_hash):
         return hmac.compare_digest(computed, stored_hash)
     except Exception:
         return False
+
+
+def validate_admin_password(password):
+    """Return (valid, message) for dashboard password policy."""
+    if len(password or "") < 12:
+        return False, "Password must be at least 12 characters."
+    if not any(char.isalpha() for char in password):
+        return False, "Password must include at least one letter."
+    if not any(char.isdigit() for char in password):
+        return False, "Password must include at least one number."
+    if password.lower() in {"admin123456", "password1234", "admin123456789"}:
+        return False, "Choose a less predictable password."
+    return True, ""
 
 def init_db():
     conn = _get_connection()
@@ -126,10 +140,12 @@ def init_db():
     # Default admin create karo agar nahi hai
     cursor.execute("SELECT COUNT(*) FROM admin_users")
     if cursor.fetchone()[0] == 0:
-        default_hash = _hash_password("admin123")
+        # Generate and discard a random bootstrap password. New installations
+        # must explicitly initialize credentials with reset_dashboard_login.py.
+        default_hash = _hash_password(secrets.token_urlsafe(32))
         cursor.execute("INSERT INTO admin_users (username, password_hash) VALUES (?, ?)",
                        ("admin", default_hash))
-        print("🔒 Default admin created → Username: admin | Password: admin123")
+        print("🔒 Dashboard admin initialized. Run reset_dashboard_login.py before login.")
 
     # Migrate older DBs that were created before priority column existed
     cursor.execute("PRAGMA table_info(categories)")
@@ -253,6 +269,9 @@ def verify_admin(username, password):
 
 def update_admin_password(username, new_password):
     """Password change / reset with salted hash"""
+    valid, message = validate_admin_password(new_password)
+    if not valid:
+        raise ValueError(message)
     conn = _get_connection()
     try:
         cursor = conn.cursor()
