@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -28,6 +28,10 @@ def private_data_dir():
 def load_runtime_env():
     """Use the private file as the local source of truth, with repo .env as fallback."""
     private_path = private_env_path()
-    load_dotenv(private_path, override=True)
-    load_dotenv(LEGACY_ENV_PATH, override=False)
+    for key, value in dotenv_values(private_path).items():
+        if value is not None:
+            os.environ[key] = value
+    for key, value in dotenv_values(LEGACY_ENV_PATH).items():
+        if value is not None and key not in os.environ:
+            os.environ[key] = value
     return private_path
