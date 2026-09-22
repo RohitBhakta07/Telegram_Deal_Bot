@@ -51,6 +51,7 @@ def test_config_does_not_continue_after_credential_decryption_error(monkeypatch)
 
 def test_setup_generates_usable_keys_when_none_exist(tmp_path, monkeypatch):
     private_env = tmp_path / "private.env"
+    monkeypatch.setenv("DEAL_HUNTER_ENV_FILE", str(private_env))
     monkeypatch.setattr(secure_local_secrets, "ENV_PATH", private_env)
     monkeypatch.setattr(secure_local_secrets, "LEGACY_ENV_PATH", tmp_path / "missing.env")
     monkeypatch.setattr(secure_local_secrets, "_copy_legacy_session",

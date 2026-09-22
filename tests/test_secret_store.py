@@ -13,6 +13,8 @@ from secret_store import (
 @pytest.fixture
 def secret_db(tmp_path, monkeypatch):
     monkeypatch.setattr(db_manager, "DB_PATH", str(tmp_path / "secrets.db"))
+    monkeypatch.setenv("DEAL_HUNTER_ENV_FILE", str(tmp_path / "missing.env"))
+    monkeypatch.setattr("runtime_env.LEGACY_ENV_PATH", tmp_path / "missing-legacy.env")
     monkeypatch.setenv("ENCRYPTION_KEY", "a" * 64)
     db_manager.init_db()
     return tmp_path / "secrets.db"

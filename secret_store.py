@@ -23,7 +23,9 @@ class SecretConfigurationError(RuntimeError):
 
 
 def _raw_encryption_key():
-    value = os.environ.get("ENCRYPTION_KEY", "").strip()
+    from runtime_env import master_secret
+
+    value = master_secret("ENCRYPTION_KEY")
     if len(value) < 32 or value == 'generate_at_least_32_random_characters':
         raise SecretConfigurationError(
             "ENCRYPTION_KEY is missing or shorter than 32 characters. "

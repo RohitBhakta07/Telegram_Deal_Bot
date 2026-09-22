@@ -25,6 +25,19 @@ def private_data_dir():
     return private_env_path().parent
 
 
+def master_secret(name):
+    """Read a local master key even if the process environment was not populated."""
+    if name not in {"ENCRYPTION_KEY", "FLASK_SECRET_KEY"}:
+        raise ValueError("Unsupported master secret")
+    private_value = dotenv_values(private_env_path()).get(name)
+    if private_value is not None:
+        return private_value.strip()
+    process_value = os.environ.get(name)
+    if process_value is not None:
+        return process_value.strip()
+    return (dotenv_values(LEGACY_ENV_PATH).get(name) or "").strip()
+
+
 def load_runtime_env():
     """Use the private file as the local source of truth, with repo .env as fallback."""
     private_path = private_env_path()

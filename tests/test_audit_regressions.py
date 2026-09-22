@@ -178,8 +178,10 @@ def test_delivery_history_expires_with_deal_history(tmp_path, monkeypatch):
     assert db_manager.delivered_channels('product') == set()
 
 
-def test_documented_placeholder_is_never_accepted_as_encryption_key(monkeypatch):
+def test_documented_placeholder_is_never_accepted_as_encryption_key(tmp_path, monkeypatch):
     from secret_store import encrypt_secret, SecretConfigurationError
+    monkeypatch.setenv('DEAL_HUNTER_ENV_FILE', str(tmp_path / 'missing.env'))
+    monkeypatch.setattr('runtime_env.LEGACY_ENV_PATH', tmp_path / 'missing-legacy.env')
     monkeypatch.setenv('ENCRYPTION_KEY', 'generate_at_least_32_random_characters')
     with pytest.raises(SecretConfigurationError):
         encrypt_secret('value')

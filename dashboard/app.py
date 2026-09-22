@@ -62,7 +62,7 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 from database import db_manager
-from runtime_env import load_runtime_env
+from runtime_env import load_runtime_env, master_secret
 from secret_store import (
     SENSITIVE_SETTING_KEYS,
     SecretConfigurationError,
@@ -72,7 +72,7 @@ from secret_store import (
 
 load_runtime_env()
 app = Flask(__name__)
-app.secret_key = os.environ.get('FLASK_SECRET_KEY')
+app.secret_key = master_secret('FLASK_SECRET_KEY')
 if not app.secret_key or len(app.secret_key) < 32 or app.secret_key == 'generate_at_least_32_random_characters':
     app.secret_key = os.urandom(32).hex()
     print("WARNING: FLASK_SECRET_KEY is missing or weak; using a temporary session key.")
@@ -314,6 +314,7 @@ def save_settings():
         db_manager.update_setting('ALLOW_MISSING_BUYERS', allow_mb)
         print(f"💾 V2 Settings saved: MinBuyers={request.form.get('min_buyers_count')}, Workers={request.form.get('max_workers')}")
 
+        flash('Settings saved securely. Password fields stay blank; Configured means the value is stored.', 'success')
         return redirect(url_for('settings'))
 
 # 3. Channels Page
