@@ -1,4 +1,4 @@
-from telegram import bot
+from test_telegram_security import isolated_bot
 import json
 
 
@@ -18,7 +18,8 @@ class _TelegramResponse:
         return {"ok": True, "result": [{"message_id": 1}, {"message_id": 2}]}
 
 
-def test_album_uploads_product_and_price_as_files(monkeypatch, tmp_path):
+def test_album_uploads_product_and_price_as_files(isolated_bot, monkeypatch, tmp_path):
+    bot = isolated_bot
     price = tmp_path / "price.png"
     price.write_bytes(b"price-bytes" * 100)
     captured = {}
@@ -41,7 +42,8 @@ def test_album_uploads_product_and_price_as_files(monkeypatch, tmp_path):
     assert "attach://price_shot" in captured["media"]
 
 
-def test_framed_album_is_exactly_two_local_photos(monkeypatch, tmp_path):
+def test_framed_album_is_exactly_two_local_photos(isolated_bot, monkeypatch, tmp_path):
+    bot = isolated_bot
     product = tmp_path / "product.jpg"
     price = tmp_path / "price.jpg"
     product.write_bytes(b"product-frame")
@@ -68,7 +70,8 @@ def test_framed_album_is_exactly_two_local_photos(monkeypatch, tmp_path):
     assert captured["media"][0]["caption"] == "caption"
 
 
-def test_framed_album_rejects_partial_telegram_result(monkeypatch, tmp_path):
+def test_framed_album_rejects_partial_telegram_result(isolated_bot, monkeypatch, tmp_path):
+    bot = isolated_bot
     product = tmp_path / "product.jpg"
     price = tmp_path / "price.jpg"
     product.write_bytes(b"product-frame")

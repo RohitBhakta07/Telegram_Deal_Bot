@@ -142,8 +142,8 @@
                 const logBox = document.getElementById('log-content');
                 const terminal = document.getElementById('terminal-screen');
                 
-                if(logBox.innerHTML !== data) {
-                    logBox.innerHTML = data;
+                if(logBox.textContent !== data) {
+                    logBox.textContent = data;
                     if(autoScroll) {
                         terminal.scrollTop = terminal.scrollHeight;
                     }
@@ -168,7 +168,7 @@
         fetch('/restart_bot', { method: 'POST', headers: { 'X-CSRF-Token': getCSRFToken() } })
             .then(response => response.json())
             .then(data => {
-                alert("Restart signal sent to server!");
+                alert(data.message);
             });
     }
 

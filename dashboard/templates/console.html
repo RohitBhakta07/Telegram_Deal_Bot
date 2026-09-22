@@ -87,7 +87,7 @@
         fetch('/get_logs')
             .then(response => response.text())
             .then(data => {
-                logContent.innerHTML = data;
+                logContent.textContent = data;
                 if (!isUserScrolling) {
                     terminalBody.scrollTop = terminalBody.scrollHeight;
                 }
@@ -112,7 +112,7 @@
             method: 'POST',
             headers: { 'X-CSRF-Token': getCSRFToken() }
         })
-            .then(() => alert("Restart signal sent! Check logs."));
+            .then(response => response.json()).then(data => alert(data.message));
     }
 
     function clearLogs() {
@@ -120,7 +120,7 @@
             method: 'POST',
             headers: { 'X-CSRF-Token': getCSRFToken() }
         })
-            .then(() => logContent.innerHTML = "Logs cleared.");
+            .then(() => logContent.textContent = "Logs cleared.");
     }
 
     // Refresh every 2 seconds

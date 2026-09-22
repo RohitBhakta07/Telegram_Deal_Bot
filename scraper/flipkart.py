@@ -7,10 +7,11 @@ import re
 import json
 import html as html_lib
 import queue as queue_module
+from urllib.parse import urlsplit
 from analyzer.deal_selector import score_deal
 from analyzer.trends import build_flipkart_url
 from scraper.browser_pool import new_context
-from scraper.price_screenshot import capture_price_tag_screenshot
+from scraper.price_screenshot import capture_price_tag_screenshot, cleanup_screenshot
 from scraper.parser import (
     extract_prices_and_discount,
     extract_rating,
@@ -282,6 +283,16 @@ def scrape_single_product(product_url):
 
         time.sleep(3)
 
+        final_url = page.url
+        destination = urlsplit(final_url)
+        host = (destination.hostname or "").lower()
+        if (destination.scheme not in {"http", "https"}
+                or not (host == "flipkart.com" or host.endswith(".flipkart.com"))
+                or destination.username or destination.password
+                or destination.port not in {None, 80, 443}):
+            print("[INSTANT POST] Product destination is not a valid Flipkart page.")
+            return None
+
         try:
             html_content = page.content()
             page_text = page.inner_text("body", timeout=5000)
@@ -292,11 +303,11 @@ def scrape_single_product(product_url):
         schema = _extract_product_schema(html_content)
 
         # Product schema is authoritative; OpenGraph is fallback.
-        title = "Flipkart Product"
+        title = ""
         if schema.get("name"):
             title = str(schema["name"]).strip()
         m_title = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html_content)
-        if title == "Flipkart Product" and m_title:
+        if not title and m_title:
             title = m_title.group(1).replace("Buy ", "").split(" at ")[0].strip()
         title = _collapse_adjacent_word_repeats(title)
 
@@ -313,6 +324,7 @@ def scrape_single_product(product_url):
 
         # Only the Product.offers price is accepted.
         price = "Check Link"
+        price_val = 0
         offers = schema.get("offers") or {}
         if isinstance(offers, list):
             offers = offers[0] if offers else {}
@@ -322,6 +334,14 @@ def scrape_single_product(product_url):
                 price = f"₹{price_val:,}"
             except (TypeError, ValueError):
                 pass
+
+        image_destination = urlsplit(image_url)
+        if (not title or price_val <= 0
+                or image_destination.scheme not in {"http", "https"}
+                or not image_destination.hostname
+                or image_destination.username or image_destination.password):
+            print("[INSTANT POST] Missing verified product title, positive price, or image; post held back.")
+            return None
 
         # Bind MRP and discount to the same visible block as the current price.
         # Never use the page-wide maximum; Flipkart appends similar products.
@@ -351,11 +371,8 @@ def scrape_single_product(product_url):
                     discount_str = f"{calc_disc}% Off"
             except Exception:
                 pass
-        if discount_str == "0% Off":
-            discount_str = "Mega Deal"
-
         # Highlights
-        highlights = "• Premium Quality\n• Best in Class\n• Verified Product"
+        highlights = ""
         try:
             page_lines = page_text.split('\n')
             for i, line in enumerate(page_lines):
@@ -372,7 +389,7 @@ def scrape_single_product(product_url):
 
         deal_info = {
             "title": title[:100] + ("..." if len(title) > 100 else ""),
-            "link": product_url,
+            "link": final_url,
             "image": image_url,
             "price": price,
             "mrp": mrp,
@@ -529,6 +546,7 @@ def scrape_keyword_full(keyword, settings, deal_queue, skip_link_fn=None):
 
     qualified_deals = []
     checked_links = set()
+    enqueued_ids = set()
 
     context = new_context()
     try:
@@ -642,7 +660,9 @@ def scrape_keyword_full(keyword, settings, deal_queue, skip_link_fn=None):
         for item in qualified_deals:
             deal = item['deal']
             score = item['score']
-            if score['total'] >= 85:
+            if settings.get('is_flash', False):
+                priority = 1
+            elif score['total'] >= 85:
                 priority = 2
             elif score['total'] >= 70:
                 priority = 3
@@ -658,15 +678,24 @@ def scrape_keyword_full(keyword, settings, deal_queue, skip_link_fn=None):
                 'priority': priority,
                 'timestamp': time.time(),
             }
-            deal_queue.put((priority, time.time(), queue_item))
+            try:
+                deal_queue.put_nowait((priority, time.time(), queue_item))
+            except queue_module.Full:
+                print(f"  [{keyword}] Queue full; deal held back.")
+                continue
+            enqueued_ids.add(id(item))
             print(f"  [{keyword}] Queued: {deal.get('title','')[:30]}... (Priority={priority})")
 
     except Exception as e:
         print(f"  [{keyword}] CRITICAL ERROR: {e}")
     finally:
+        # Ownership passes to the consumer only after a successful enqueue.
+        for item in qualified_deals:
+            if id(item) not in enqueued_ids:
+                cleanup_screenshot(item['deal'].get('screenshot_path'))
         try:
             context.close()
         except Exception:
             pass
 
-    return len(qualified_deals)
+    return len(enqueued_ids)

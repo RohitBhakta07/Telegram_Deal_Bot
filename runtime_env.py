@@ -26,8 +26,8 @@ def private_data_dir():
 
 
 def load_runtime_env():
-    """Load the OS-local file first, retaining repo .env only as a fallback."""
+    """Use the private file as the local source of truth, with repo .env as fallback."""
     private_path = private_env_path()
-    load_dotenv(private_path, override=False)
+    load_dotenv(private_path, override=True)
     load_dotenv(LEGACY_ENV_PATH, override=False)
     return private_path

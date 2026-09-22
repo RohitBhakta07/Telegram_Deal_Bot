@@ -278,16 +278,15 @@ Run it with a local environment file and persistent data mounts:
 
 ```bash
 docker run --name deal-hunter-bot \
-  --env-file .env \
-  -p 8000:8000 \
+  -p 127.0.0.1:8000:8000 \
   -v "$(pwd)/database:/app/database" \
-  -v "$(pwd)/userbot:/app/userbot" \
+  -v "$HOME/.config/deal-hunter-bot:/run/deal-hunter" \
   deal-hunter-bot
 ```
 
-On PowerShell, use absolute Windows paths for the two volume mounts. Protect the mounted database, `.env`, and userbot session directory.
+Create private configuration with `scripts/secure_local_secrets.py` first. On PowerShell, use an absolute repository database path and `${env:LOCALAPPDATA}/DealHunterBot` as the private-config mount source. The private mount contains `.env` and `sessions/extrape.session`; mounting the source `userbot` directory does not supply that session. Protect both data mounts.
 
-The container exposes port `8000` and checks `/health` for application health.
+The container exposes port `8000`; the example publishes it only on localhost. `/health` reports database connectivity and returns HTTP 503 on database failure; it does not prove worker progress or external delivery. Local runs also bind to `127.0.0.1` by default. Set `DASHBOARD_HOST` explicitly only when remote access is intended.
 
 ## Tests
 

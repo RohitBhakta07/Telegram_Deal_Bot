@@ -1,8 +1,46 @@
 # Deal Hunter Bot — Implementation Changes
 
-Last updated: 1 September 2026
+Last updated: 23 September 2026
 
 This document records the implemented fixes and the current production flow. It is intended to be kept in Git with the source code. Generated screenshots, media frames, local databases, sessions, logs, and secrets are excluded through `.gitignore`.
+
+## 23 September 2026 audit and fixes
+
+**Status: local checks pass, but provider credential exposure remains unresolved. Do not describe this as fully secure or fully live-validated.** Changes are in the local `new-update` checkout; they have not been committed, pushed, or deployed.
+
+### Confirmed security exposure requiring account-owner action
+
+A read-only scan found ten historical database/log/session objects. The **currently working bot token and current API hash match bytes in Git history**. The current local session authentication key did not match the scanned objects, but this does not establish that older sessions have been revoked. No secret values were printed. Current SQLite sensitive settings contain zero plaintext secrets.
+
+Revoke/regenerate the exposed bot token through BotFather and replace it in the dashboard (or the private environment override if configured). Review Telegram Devices/active sessions, terminate untrusted or obsolete sessions, and address the exposed Telegram application credentials with a new application configuration/provider support as available. Do not paste replacement credentials into Git, logs, or chat. Environment credentials take precedence over dashboard values. Review channel activity for unauthorized posts.
+
+Rotation and Git-history rewriting were not performed. History cleanup requires a separately approved rewrite and coordinated force-push; deleting present-day files does not revoke exposed credentials. There is evidence of exposure, not evidence establishing that an attacker used the credentials.
+
+### Implemented repairs
+
+- Telegram no longer prints token prefixes, raw token-bearing HTTP exceptions, or upstream response bodies. A successful response requires actual valid message IDs. Production album failures cannot silently degrade into individual photos/text.
+- ExtraPe requests use one session owner, bounded reply/connection deadlines, cancellation, and cleanup before session reuse. Status replies are skipped; known affiliate hostname forms are checked. A failed disconnect requires a **process** restart, not merely a dashboard worker restart.
+- Tokens/API credentials reload on the next request. Queued and instant posts share affiliate generation. Failed conversion with no configured fallback holds the post; adding parameters to an unresolved short URL is rejected. URL syntax validation does not prove commission attribution or destination/product correspondence.
+- Per-channel delivery receipts preserve successes while allowing failed channels to retry when the product is processed again. Receipt retention follows deal-history deletion. Legacy history without receipts retains its existing duplicate-suppression behavior. Network acknowledgement loss or a crash before receipt persistence can still cause uncertain delivery; exactly-once external delivery is not guaranteed.
+- First-run configuration can load before the settings table exists, while other database errors still surface. Startup stops on database initialization failure. Weak sample master keys are no longer provided or accepted; bcrypt passwords exceeding 72 UTF-8 bytes are rejected cleanly.
+- Product/log text renders as text rather than executable HTML. Local dashboard binds to localhost by default, standalone debug mode is off, and numeric runtime settings have bounds. `/health` returns HTTP 503 when the database is unavailable; it checks database connectivity, not worker progress.
+- Consumer honors pause/shutdown before starting new channel sends, always completes dequeued work, and cleans media. Already in-flight network requests cannot be recalled. Normal shutdown no longer restarts itself; worker restart waits for the old consumer to exit.
+- Scraper workers release their thread-owned browsers. Full queues drop/clean unqueued media instead of blocking forever. Counts reflect enqueued products. Flash priority and adaptive wait intervals are now applied.
+- Decimal rupee parsing and the missing-buyer option are corrected. Instant products require a real title, positive price and image; invalid/foreign final destinations and fabricated verification/quality highlights are rejected/removed.
+- Instant Post permits one active request, releases resources on every exit, and reports acceptance without promising delivery. Success/failure is available in logs/history. Dashboard restart now cooperatively restarts the scheduling worker; standalone dashboard reports that no worker is attached.
+- `.dockerignore` excludes credentials, sessions, databases, logs, environments and generated artifacts from image build context. Docker instructions mount the actual private configuration/session directory.
+
+### Verification and boundaries
+
+- Recreated a working `.venv`; the old `venv` referenced a different Windows user's missing Python installation.
+- `python -m pytest -q`: **208 passed**, including new offline fault/timeout/security and queue-to-caption-to-channel-history regressions.
+- `uv pip check --python .venv/Scripts/python.exe`: all 40 installed packages compatible.
+- `pip-audit` against this installed environment: no known vulnerabilities found at audit time. Machine-readable evidence is in ignored `output/dependency-audit-2026-09-23.json`; this is not proof of zero vulnerabilities.
+- Live, read-only Telegram `getMe` succeeded; the one configured channel confirms posting permission. Browser launch succeeded.
+- One recent real Flipkart product returned live price/image data and a price screenshot. Both resulting media frames were generated and checked as **1080 x 1350**, then temporary media was cleaned.
+- No Telegram post or ExtraPe message was sent. Live affiliate commission attribution, full external publishing, continuous operation, Docker build/run, and provider credential rotation remain unverified/not performed.
+
+After credential remediation, start with `.\.venv\Scripts\python.exe main.py` and open `http://127.0.0.1:8000`. Startup creates the new delivery table. Perform a controlled post to an authorized test channel and verify the affiliate destination/attribution before enabling unattended production operation.
 
 ## 1. Current posting result
 
