@@ -46,22 +46,27 @@ SYSTEM_BROWSER_PATHS = (
 
 def _get_or_create_browser():
     """Create a browser instance for the current thread if one doesn't exist."""
+    if hasattr(_thread_local, 'browser') and not _thread_local.browser.is_connected():
+        cleanup_thread()
     if not hasattr(_thread_local, 'browser'):
         p = sync_playwright().start()
-        launch_options = {"headless": True, "args": BROWSER_ARGS}
-        if not os.path.isfile(p.chromium.executable_path):
-            installed_browser = next(
-                (path for path in SYSTEM_BROWSER_PATHS if os.path.isfile(path)),
-                None,
-            )
-            if not installed_browser:
-                p.stop()
-                raise RuntimeError(
-                    "No Chromium browser found. Run 'playwright install chromium' "
-                    "or install Chrome/Edge."
+        try:
+            launch_options = {"headless": True, "args": BROWSER_ARGS}
+            if not os.path.isfile(p.chromium.executable_path):
+                installed_browser = next(
+                    (path for path in SYSTEM_BROWSER_PATHS if os.path.isfile(path)),
+                    None,
                 )
-            launch_options["executable_path"] = installed_browser
-        browser = p.chromium.launch(**launch_options)
+                if not installed_browser:
+                    raise RuntimeError(
+                        "No Chromium browser found. Run 'playwright install chromium' "
+                        "or install Chrome/Edge."
+                    )
+                launch_options["executable_path"] = installed_browser
+            browser = p.chromium.launch(**launch_options)
+        except Exception:
+            p.stop()
+            raise
         _thread_local.playwright = p
         _thread_local.browser = browser
     return _thread_local.browser

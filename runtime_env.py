@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -25,9 +25,26 @@ def private_data_dir():
     return private_env_path().parent
 
 
+def master_secret(name):
+    """Read a local master key even if the process environment was not populated."""
+    if name not in {"ENCRYPTION_KEY", "FLASK_SECRET_KEY"}:
+        raise ValueError("Unsupported master secret")
+    private_value = dotenv_values(private_env_path()).get(name)
+    if private_value is not None:
+        return private_value.strip()
+    process_value = os.environ.get(name)
+    if process_value is not None:
+        return process_value.strip()
+    return (dotenv_values(LEGACY_ENV_PATH).get(name) or "").strip()
+
+
 def load_runtime_env():
-    """Load the OS-local file first, retaining repo .env only as a fallback."""
+    """Use the private file as the local source of truth, with repo .env as fallback."""
     private_path = private_env_path()
-    load_dotenv(private_path, override=False)
-    load_dotenv(LEGACY_ENV_PATH, override=False)
+    for key, value in dotenv_values(private_path).items():
+        if value is not None:
+            os.environ[key] = value
+    for key, value in dotenv_values(LEGACY_ENV_PATH).items():
+        if value is not None and key not in os.environ:
+            os.environ[key] = value
     return private_path

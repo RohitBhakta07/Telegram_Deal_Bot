@@ -31,6 +31,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
 # Expose dashboard port
+ENV DASHBOARD_HOST=0.0.0.0
+ENV DEAL_HUNTER_ENV_FILE=/run/deal-hunter/.env
 EXPOSE 8000
 
 # Run the bot

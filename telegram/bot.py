@@ -4,15 +4,17 @@ import os
 import time
 from io import BytesIO
 import requests
-from config import BOT_TOKEN
+import config
 
 from telegram.post_format import shrink_product_image_url, TELEGRAM_PHOTO_CAPTION_MAX
 
 
 def _token():
-    if not BOT_TOKEN:
+    # Dashboard changes and credential rotations must apply to the next send.
+    token = config._load_secret("BOT_TOKEN")
+    if not token:
         return None
-    return BOT_TOKEN.strip()
+    return token.strip()
 
 
 def send_telegram_deal_post(text, chat_id, image_url=None, product_image_path=None,
@@ -30,14 +32,16 @@ def send_telegram_deal_post(text, chat_id, image_url=None, product_image_path=No
         print("❌ Error: BOT_TOKEN khali hai! Dashboard mein jaakar Save karein.")
         return None
 
-    print(f"🔍 Checking Token... (Start: {clean_token[:10]}...)")
     safe_caption = (text or "")[:TELEGRAM_PHOTO_CAPTION_MAX]
 
     has_product = bool(image_url and str(image_url).startswith("http"))
     has_product_file = bool(product_image_path and os.path.isfile(product_image_path))
     has_price = bool(price_screenshot_path and os.path.isfile(price_screenshot_path))
 
-    if has_product_file and has_price:
+    if product_image_path is not None:
+        if not (has_product_file and has_price):
+            print("[Telegram] Strict 2-photo mode: missing frame; post held back.")
+            return None
         return _send_two_file_album(
             clean_token, chat_id, safe_caption,
             product_image_path, price_screenshot_path,
@@ -53,15 +57,37 @@ def send_telegram_deal_post(text, chat_id, image_url=None, product_image_path=No
     return _send_text_only(clean_token, chat_id, text)
 
 
-def _valid_album_response(response):
+def _valid_message(message):
+    return (
+        isinstance(message, dict)
+        and type(message.get("message_id")) is int
+        and message["message_id"] > 0
+    )
+
+
+def _valid_response(response, album=False):
     if response.status_code != 200:
         return None
     try:
         payload = response.json()
-        result = payload.get("result", [])
-        return payload if payload.get("ok") and isinstance(result, list) and len(result) == 2 else None
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            return None
+        result = payload.get("result")
+        if album:
+            valid = (
+                isinstance(result, list) and len(result) == 2
+                and all(_valid_message(message) for message in result)
+                and result[0]["message_id"] != result[1]["message_id"]
+            )
+        else:
+            valid = _valid_message(result)
+        return payload if valid else None
     except Exception:
         return None
+
+
+def _valid_album_response(response):
+    return _valid_response(response, album=True)
 
 
 def _send_two_file_album(token, chat_id, caption, product_path, price_path):
@@ -83,9 +109,10 @@ def _send_two_file_album(token, chat_id, caption, product_path, price_path):
         if result:
             print(f"[Telegram] Professional 2-photo album sent: {chat_id}")
             return result
-        print(f"[Telegram] Framed album rejected: {response.text}")
+        print(f"[Telegram] Framed album rejected (HTTP {response.status_code}).")
     except Exception as e:
-        print(f"[Telegram] Framed album error: {e}")
+        # Request exceptions and upstream bodies can include the token URL.
+        print(f"[Telegram] Framed album error: {type(e).__name__}")
 
     # Do not degrade into separate messages: that would break the requested
     # side-by-side Telegram album and could leave the channel with one photo.
@@ -113,7 +140,7 @@ def _send_two_photo_album(token, chat_id, caption, product_url, price_path):
         product_file = BytesIO(image_response.content)
         product_file.name = "product.jpg"
     except Exception as e:
-        print(f"[Telegram] Product image download failed; using remote URL: {e}")
+        print(f"[Telegram] Product image download failed; using remote URL: {type(e).__name__}")
 
     product_media = "attach://product_photo" if product_file else product_url
     media = [
@@ -135,19 +162,13 @@ def _send_two_photo_album(token, chat_id, caption, product_url, price_path):
         if valid_album:
             print(f"✅ Telegram: 2 photos sent (product + price tag). Channel: {chat_id}")
             return valid_album
-        print(f"⚠️ Album fail: {response.text}")
-        print("[Telegram] Album failed; sending both photos separately...")
-        first = _send_single_url_photo(token, chat_id, caption, product_url)
-        second = _send_single_file_photo(token, chat_id, "Price proof", price_path)
-        return {"ok": True, "separate_messages": True} if first and second else None
+        print(f"[Telegram] Album rejected (HTTP {response.status_code}); post held back.")
     except Exception as e:
-        print(f"⚠️ Album error: {e}")
-        first = _send_single_url_photo(token, chat_id, caption, product_url)
-        second = _send_single_file_photo(token, chat_id, "Price proof", price_path)
-        return {"ok": True, "separate_messages": True} if first and second else None
+        print(f"[Telegram] Album error: {type(e).__name__}; post held back.")
     finally:
         if product_file:
             product_file.close()
+    return None
 
 
 def _send_single_file_photo(token, chat_id, caption, file_path):
@@ -160,12 +181,13 @@ def _send_single_file_photo(token, chat_id, caption, file_path):
                 files={"photo": img_file},
                 timeout=30,
             )
-        if response.status_code == 200:
+        result = _valid_response(response)
+        if result:
             print(f"✅ Telegram photo sent. (Channel: {chat_id})")
-            return response.json()
-        print(f"⚠️ Photo upload fail: {response.text}")
+            return result
+        print(f"[Telegram] Photo upload rejected (HTTP {response.status_code}).")
     except Exception as e:
-        print(f"⚠️ Photo error: {e}")
+        print(f"[Telegram] Photo error: {type(e).__name__}")
     return _send_text_only(token, chat_id, caption)
 
 
@@ -180,9 +202,10 @@ def _send_single_url_photo(token, chat_id, caption, image_url):
     }
     try:
         response = requests.post(url, data=payload, timeout=15)
-        if response.status_code == 200:
+        result = _valid_response(response)
+        if result:
             print(f"✅ Telegram par VIP Photo/Message chala gaya! (Channel: {chat_id})")
-            return response.json()
+            return result
         if response.status_code == 429:
             retry_after = 10
             try:
@@ -191,11 +214,12 @@ def _send_single_url_photo(token, chat_id, caption, image_url):
                 pass
             time.sleep(retry_after)
             response = requests.post(url, data=payload, timeout=15)
-            if response.status_code == 200:
-                return response.json()
-        print(f"⚠️ Photo fail: {response.text}")
+            result = _valid_response(response)
+            if result:
+                return result
+        print(f"[Telegram] Photo rejected (HTTP {response.status_code}).")
     except Exception as e:
-        print(f"⚠️ Photo request error: {e}")
+        print(f"[Telegram] Photo request error: {type(e).__name__}")
     return _send_text_only(token, chat_id, caption)
 
 
@@ -210,12 +234,13 @@ def _send_text_only(token, chat_id, text):
     }
     try:
         response = requests.post(url, data=payload, timeout=15)
-        if response.status_code == 200:
+        result = _valid_response(response)
+        if result:
             print("✅ Telegram par Text Message chala gaya!")
-            return response.json()
-        print(f"❌ Telegram Error: {response.text}")
+            return result
+        print(f"[Telegram] Text rejected (HTTP {response.status_code}).")
     except Exception as e:
-        print(f"❌ Telegram Error: {e}")
+        print(f"[Telegram] Text error: {type(e).__name__}")
     return None
 
 

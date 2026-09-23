@@ -2,20 +2,13 @@
 Human-like deal picker: scores, compares, and explains why one deal wins.
 """
 import re
-from analyzer.fake_drop import is_genuine_deal, get_fake_drop_reason
+from analyzer.fake_drop import is_genuine_deal, get_fake_drop_reason, _parse_rupees
 
 # Suspicious titles a real deal hunter would avoid
 _TITLE_RED_FLAGS = (
     "refurbished", "damaged", "without box", "non-retail", "duplicate",
     "combo pack of 1", "only cover", "replacement only", "defective",
 )
-
-
-def _parse_rupees(value):
-    if value is None:
-        return 0
-    digits = re.sub(r"[^\d]", "", str(value))
-    return int(digits) if digits else 0
 
 
 def _parse_discount(value):
@@ -245,7 +238,7 @@ def pick_best_deal(
             else:
                 print(f"  [Skip] {deal.get('title', '')[:35]}... - buyers_count missing")
                 continue
-        if buyers_count < min_buyers_count:
+        elif buyers_count < min_buyers_count:
             print(f"  [Skip] {deal.get('title', '')[:35]}... - buyers_count {buyers_count} < min {min_buyers_count}")
             continue
         if best["score"]["total"] < min_score:

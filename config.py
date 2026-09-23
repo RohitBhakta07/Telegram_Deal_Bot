@@ -13,8 +13,7 @@ def _load_secret(key):
     try:
         return get_secret(key)
     except SecretConfigurationError as exc:
-        print(f"SECURITY CONFIG ERROR ({key}): {exc}")
-        return ""
+        raise SystemExit(f"SECURITY CONFIG ERROR ({key}): {exc}") from exc
 
 
 API_ID = _load_secret('API_ID')

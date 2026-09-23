@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import os
+import sqlite3
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -22,8 +23,10 @@ class SecretConfigurationError(RuntimeError):
 
 
 def _raw_encryption_key():
-    value = os.environ.get("ENCRYPTION_KEY", "").strip()
-    if len(value) < 32:
+    from runtime_env import master_secret
+
+    value = master_secret("ENCRYPTION_KEY")
+    if len(value) < 32 or value == 'generate_at_least_32_random_characters':
         raise SecretConfigurationError(
             "ENCRYPTION_KEY is missing or shorter than 32 characters. "
             "Run: python scripts/secure_local_secrets.py"
@@ -87,7 +90,13 @@ def get_secret(key, default=""):
 
     from database import db_manager
 
-    stored = db_manager.get_setting(key, "")
+    try:
+        stored = db_manager.get_setting(key, "")
+    except sqlite3.OperationalError as exc:
+        # config is imported before init_db on the first application start.
+        if str(exc) == 'no such table: settings':
+            return default
+        raise
     if not stored:
         return default
     if stored.startswith(ENCRYPTED_PREFIX):

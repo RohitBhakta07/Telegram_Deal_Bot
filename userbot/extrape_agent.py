@@ -13,20 +13,28 @@ import re
 import sys
 import os
 import threading
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from config import API_ID, API_HASH, SESSION_PATH
+import config
 try:
     from telethon import TelegramClient
 except Exception:
     TelegramClient = None
 
 EXTRAPE_BOT_USERNAME = '@ExtraPeBot'
+_REPLY_TIMEOUT = 60
+_REQUEST_TIMEOUT = 75
+_DISCONNECT_TIMEOUT = 5
+_SYNC_TIMEOUT = 90
+# Both callers share one SQLite session and one bot conversation. Reject an
+# overlapping request instead of queuing stale work or opening a second client.
+_session_lock = threading.Lock()
+_cleanup_tasks = set()
 
 def _resolve_session_file(session_path):
     """Return a Telethon session *file prefix*, never a directory."""
@@ -44,7 +52,7 @@ def _resolve_session_file(session_path):
     return os.path.join(expanded, "extrape")
 
 
-_session_file = _resolve_session_file(SESSION_PATH)
+_session_file = _resolve_session_file(config.SESSION_PATH)
 
 
 # -------------------------------------------------------------------
@@ -82,16 +90,35 @@ def _stop_loop():
 # -------------------------------------------------------------------
 # Core async logic
 # -------------------------------------------------------------------
-async def _get_extrape_link(client, original_link):
+def _trusted_affiliate_url(url, original_link):
+    """Accept known Flipkart affiliate forms, never a hostname substring."""
+    if not isinstance(url, str) or any(c.isspace() or ord(c) < 32 for c in url):
+        return None
+    url = url.rstrip('.,);]}')
+    if url == original_link or '\\' in url:
+        return None
     try:
-        if not await client.is_user_authorized():
-            print("[ExtraPe] Userbot is NOT authorized. Using original link.")
-            return original_link
+        parsed = urlsplit(url)
+        host = (parsed.hostname or '').lower()
+        if (parsed.scheme not in ('http', 'https') or parsed.username is not None
+                or parsed.password is not None or parsed.port not in (None, 80, 443)):
+            return None
+        if host in ('fkrt.co', 'fkrt.it') and parsed.path.strip('/'):
+            return url
+        if (host == 'flipkart.com' or host.endswith('.flipkart.com')):
+            if parsed.path.strip('/') and parse_qs(parsed.query).get('affid'):
+                return url
+    except ValueError:
+        pass
+    return None
 
-        print("[ExtraPe] Sending link and waiting for reply...")
 
-        async with client.conversation(EXTRAPE_BOT_USERNAME, timeout=60) as conv:
-            await conv.send_message(original_link)
+async def _read_affiliate_reply(client, original_link):
+    async with client.conversation(EXTRAPE_BOT_USERNAME, timeout=_REPLY_TIMEOUT) as conv:
+        await conv.send_message(original_link)
+        # Bots can send an acknowledgement or promotional message before the
+        # generated URL. The outer deadline bounds the entire conversation.
+        for _ in range(10):
             response = await conv.get_response()
             reply_text = response.text or ""
             urls = re.findall(r'https?://[^\s<>"\']+', reply_text)
@@ -102,46 +129,79 @@ async def _get_extrape_link(client, original_link):
                     if button_url:
                         urls.append(button_url)
 
-            cleaned = []
             for url in urls:
-                url = url.rstrip('.,);]}')
-                try:
-                    if urlsplit(url).scheme in ("http", "https") and url != original_link:
-                        cleaned.append(url)
-                except Exception:
-                    continue
-            if cleaned:
-                preferred = next((u for u in cleaned if 'fkrt.co' in u.lower()), cleaned[0])
-                print(f"[ExtraPe] Affiliate link received: {preferred}")
-                return preferred
+                accepted = _trusted_affiliate_url(url, original_link)
+                if accepted:
+                    print("[ExtraPe] Affiliate link received.")
+                    return accepted
+    return original_link
 
-        print("[ExtraPe] No link found in reply.")
-        return original_link
 
+async def _get_extrape_link(client, original_link):
+    try:
+        if not await client.is_user_authorized():
+            print("[ExtraPe] Userbot is NOT authorized. Using original link.")
+            return original_link
+        print("[ExtraPe] Sending link and waiting for reply...")
+        return await asyncio.wait_for(
+            _read_affiliate_reply(client, original_link), timeout=_REPLY_TIMEOUT,
+        )
     except asyncio.TimeoutError:
-        print("[ExtraPe] Timeout after 60s. Using original link.")
+        print("[ExtraPe] Reply deadline expired. Using original link.")
         return original_link
     except ConnectionError:
         print("[ExtraPe] Telegram connection error. Using original link.")
         return original_link
     except Exception as e:
-        print(f"[ExtraPe] Userbot error: {e}")
+        print(f"[ExtraPe] Userbot error ({type(e).__name__}). Using original link.")
         return original_link
+
+
+async def _disconnect_and_release(client):
+    # Telethon shields its own disconnect task. Keep exclusive session ownership
+    # until it really finishes, even after the caller has timed out/cancelled.
+    try:
+        await client.disconnect()
+    except Exception as exc:
+        print(f"[ExtraPe] Disconnect failed ({type(exc).__name__}); restart required.")
+    else:
+        _session_lock.release()
+
+
+async def _convert_link(client, original_link):
+    await client.connect()
+    return await _get_extrape_link(client, original_link)
 
 
 async def _run_async(original_link):
-    if not API_ID or not API_HASH:
-        print("[ExtraPe] API_ID/API_HASH missing; userbot disabled.")
+    if not _session_lock.acquire(blocking=False):
+        print("[ExtraPe] Conversion already active. Using original link.")
         return original_link
-    client = TelegramClient(_session_file, API_ID, API_HASH)
+    client = None
     try:
-        await client.connect()
-        return await _get_extrape_link(client, original_link)
+        api_id = config._load_secret('API_ID')
+        api_hash = config._load_secret('API_HASH')
+        if not api_id or not api_hash:
+            print("[ExtraPe] API_ID/API_HASH missing; userbot disabled.")
+            return original_link
+        client = TelegramClient(_session_file, api_id, api_hash)
+        return await asyncio.wait_for(
+            _convert_link(client, original_link), timeout=_REQUEST_TIMEOUT,
+        )
+    except Exception as exc:
+        print(f"[ExtraPe] Conversion failed ({type(exc).__name__}). Using original link.")
+        return original_link
     finally:
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+        if client is None:
+            _session_lock.release()
+        else:
+            cleanup = asyncio.create_task(_disconnect_and_release(client))
+            _cleanup_tasks.add(cleanup)
+            cleanup.add_done_callback(_cleanup_tasks.discard)
+            try:
+                await asyncio.wait_for(asyncio.shield(cleanup), _DISCONNECT_TIMEOUT)
+            except asyncio.TimeoutError:
+                print("[ExtraPe] Disconnect still pending; conversions remain disabled until cleanup.")
 
 
 # -------------------------------------------------------------------
@@ -156,14 +216,17 @@ def get_sync_link(original_link):
 
     loop = _start_loop_thread()
 
+    future = None
     try:
         future = asyncio.run_coroutine_threadsafe(
             _run_async(original_link), loop,
         )
-        return future.result(timeout=90)
+        return future.result(timeout=_SYNC_TIMEOUT)
     except asyncio.TimeoutError:
-        print("[ExtraPe] Sync call timed out after 90s. Using original link.")
+        if future is not None:
+            future.cancel()
+        print("[ExtraPe] Sync call timed out; conversion cancelled. Using original link.")
         return original_link
     except Exception as e:
-        print(f"[ExtraPe] Sync link error: {e}")
+        print(f"[ExtraPe] Sync link error ({type(e).__name__}). Using original link.")
         return original_link

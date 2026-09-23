@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, abort, flash
+from flask import Response, Flask, render_template, request, redirect, url_for, jsonify, send_file, session, abort, flash
 from functools import wraps
 import sys
 import os
@@ -23,6 +23,7 @@ auth_logger.propagate = False
 # 🛡️ SECURITY: In-memory rate limiter (login brute-force protection)
 _rate_limit_store = {}  # {ip: [timestamp1, timestamp2, ...]}
 _rate_limit_lock = threading.Lock()
+_instant_post_slot = threading.BoundedSemaphore(1)
 
 def _is_rate_limited(ip_key, max_attempts=5, window_seconds=60):
     """Return True if IP has exceeded max login attempts in the time window."""
@@ -61,7 +62,7 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 from database import db_manager
-from runtime_env import load_runtime_env
+from runtime_env import load_runtime_env, master_secret
 from secret_store import (
     SENSITIVE_SETTING_KEYS,
     SecretConfigurationError,
@@ -71,10 +72,10 @@ from secret_store import (
 
 load_runtime_env()
 app = Flask(__name__)
-app.secret_key = os.environ.get('FLASK_SECRET_KEY')
-if not app.secret_key:
+app.secret_key = master_secret('FLASK_SECRET_KEY')
+if not app.secret_key or len(app.secret_key) < 32 or app.secret_key == 'generate_at_least_32_random_characters':
     app.secret_key = os.urandom(32).hex()
-    print("WARNING: FLASK_SECRET_KEY is not set; using a temporary session key.")
+    print("WARNING: FLASK_SECRET_KEY is missing or weak; using a temporary session key.")
 app.permanent_session_lifetime = __import__('datetime').timedelta(minutes=30)
 # 🛡️ SECURITY: Session cookie hardening
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -114,7 +115,9 @@ def _is_allowed_flipkart_url(value):
             or hostname == 'fkrt.it'
             or hostname.endswith('.fkrt.it')
         )
-        return parts.scheme.lower() in {'http', 'https'} and allowed_host
+        return (parts.scheme.lower() in {'http', 'https'} and allowed_host
+                and not parts.username and not parts.password
+                and parts.port in {None, 80, 443})
     except (TypeError, ValueError):
         return False
 
@@ -178,7 +181,7 @@ def health():
         "status": "ok" if db_ok else "degraded",
         "database": "connected" if db_ok else "error",
         "timestamp": time_module.time(),
-    })
+    }), (200 if db_ok else 503)
 
 @app.route('/change_password', methods=['POST'])
 @login_required
@@ -259,6 +262,27 @@ def settings():
 @csrf_required
 def save_settings():
     if request.method == 'POST':
+        ranges = {
+            'FLASH_INTERVAL': ('flash_interval', 1, 1440),
+            'ROUND_WAIT': ('round_wait', 1, 1440),
+            'LONG_SLEEP': ('long_sleep', 1, 1440),
+            'KEYWORDS_PER_ROUND': ('keywords_per_round', 1, 10),
+            'MIN_BUYERS_COUNT': ('min_buyers_count', 0, 100000000),
+            'MAX_SCRAPE_PAGES': ('max_scrape_pages', 1, 5),
+            'MAX_WORKERS': ('max_workers', 1, 6),
+            'QUEUE_DELAY_POST': ('queue_delay_post', 1, 3600),
+        }
+        numeric_settings = {}
+        for key, (field, low, high) in ranges.items():
+            if field not in request.form:
+                continue
+            try:
+                value = int(request.form[field])
+                if not low <= value <= high:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                return jsonify(status='error', message=f'{field} must be {low} to {high}.'), 400
+            numeric_settings[key] = str(value)
         secret_fields = {
             'API_ID': 'api_id',
             'API_HASH': 'api_hash',
@@ -275,12 +299,10 @@ def save_settings():
             auth_logger.error(f"Secure settings save rejected: {exc}")
             flash(str(exc), 'error')
             return redirect(url_for('settings'))
+        for key, value in numeric_settings.items():
+            db_manager.update_setting(key, value)
         # Save Speed Settings
-        db_manager.update_setting('FLASH_INTERVAL', request.form.get('flash_interval'))
-        db_manager.update_setting('ROUND_WAIT', request.form.get('round_wait'))
-        db_manager.update_setting('LONG_SLEEP', request.form.get('long_sleep'))
         # 🚀 Keywords Per Round
-        db_manager.update_setting('KEYWORDS_PER_ROUND', request.form.get('keywords_per_round'))
         db_manager.update_setting('DEFAULT_POST_FORMAT', request.form.get('default_post_format', 'hot_deal'))
         db_manager.update_setting('FLASH_POST_FORMAT', request.form.get('flash_post_format', 'mega_loot'))
         price_ss = db_manager.normalize_price_screenshot_setting(
@@ -288,14 +310,11 @@ def save_settings():
         )
         db_manager.update_setting('PRICE_SCREENSHOT', price_ss)
         # 🚀 V2: Priority Queue Architecture Settings
-        db_manager.update_setting('MIN_BUYERS_COUNT', request.form.get('min_buyers_count', '1000'))
-        db_manager.update_setting('MAX_SCRAPE_PAGES', request.form.get('max_scrape_pages', '3'))
-        db_manager.update_setting('MAX_WORKERS', request.form.get('max_workers', '2'))
-        db_manager.update_setting('QUEUE_DELAY_POST', request.form.get('queue_delay_post', '15'))
         allow_mb = 'ON' if request.form.get('allow_missing_buyers') == 'ON' else 'OFF'
         db_manager.update_setting('ALLOW_MISSING_BUYERS', allow_mb)
         print(f"💾 V2 Settings saved: MinBuyers={request.form.get('min_buyers_count')}, Workers={request.form.get('max_workers')}")
 
+        flash('Settings saved securely. Password fields stay blank; Configured means the value is stored.', 'success')
         return redirect(url_for('settings'))
 
 # 3. Channels Page
@@ -430,98 +449,51 @@ def instant_post_send():
     if not _is_allowed_flipkart_url(product_url):
         return jsonify({"status": "error", "message": "❌ Yeh Flipkart ka link nahi hai! Sirf Flipkart links paste karo."})
 
+    if not _instant_post_slot.acquire(blocking=False):
+        return jsonify(status='error', message='An instant post is already processing. Try again later.'), 409
+
     def process_instant_post(url, chosen_format):
+        from scraper.browser_pool import cleanup_thread
+        from telegram.deal_media import cleanup_deal_media
+        deal = None
         try:
             from scraper.flipkart import scrape_single_product
             from telegram.post_format import build_deal_message, resolve_post_format
-            from telegram.bot import send_telegram_deal_post
-            from telegram.deal_media import post_deal_message, cleanup_deal_media
-            from config import EXTRAPE_AFFID, EXTRAPE_PARAM1
-
-            print(f"\n🚀 [INSTANT POST] Processing: {url[:60]}...")
-
-            # 1. Product page scrape karo
+            from affiliate_links import get_affiliate_link
+            from publishing import publish_deal
             deal = scrape_single_product(url)
-
             if not deal:
-                print("❌ [INSTANT POST] Product scrape fail hua. Link check karo.")
+                logging.getLogger('dealbuddy').warning('Instant post: product verification failed.')
                 return
-
-            print("[INSTANT POST] Generating affiliate link...")
-            affiliate_link = url
-            try:
-                from userbot.extrape_agent import get_sync_link
-                agent_link = get_sync_link(url)
-                if agent_link and agent_link != url:
-                    affiliate_link = agent_link
-                else:
-                    raise Exception("Agent returned same link")
-            except Exception:
-                try:
-                    if not EXTRAPE_AFFID:
-                        raise ValueError("EXTRAPE_AFFID is not configured")
-                    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-                    parts = urlsplit(url)
-                    query = dict(parse_qsl(parts.query, keep_blank_values=True))
-                    query["affid"] = EXTRAPE_AFFID
-                    query["affExtParam1"] = EXTRAPE_PARAM1
-                    affiliate_link = urlunsplit(
-                        (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
-                    )
-                except Exception:
-                    pass
-
+            affiliate = get_affiliate_link(deal.get('link') or url)
+            if not affiliate:
+                logging.getLogger('dealbuddy').warning('Instant post held: affiliate conversion failed.')
+                return
+            deal.setdefault('link', url)
             fmt = resolve_post_format(
-                is_flash=False,
-                category_format=chosen_format,
+                is_flash=False, category_format=chosen_format,
                 default_format=db_manager.get_setting('DEFAULT_POST_FORMAT', 'hot_deal'),
                 flash_format=db_manager.get_setting('FLASH_POST_FORMAT', 'mega_loot'),
             )
-            message = build_deal_message(deal, affiliate_link, fmt)
-
+            count = publish_deal(deal, build_deal_message(deal, affiliate, fmt),
+                                 affiliate, 'INSTANT POST', 'instant')
+            logging.getLogger('dealbuddy').info('Instant post: delivered to %s channels.', count)
+        except Exception as exc:
+            logging.getLogger('dealbuddy').error('Instant post failed (%s)', type(exc).__name__)
+        finally:
             try:
-                channels = db_manager.get_all_channels()
-            except Exception:
-                channels = []
-            if not channels:
-                print("[INSTANT POST] No channels configured!")
-                return
-
-            sent_count = 0
-            try:
-                for channel in channels:
-                    try:
-                        result = post_deal_message(
-                            send_telegram_deal_post, channel[0], message, deal
-                        )
-                        if result:
-                            sent_count += 1
-                    except Exception as exc:
-                        print(f"[INSTANT POST] Channel {channel[0]} failed: {exc}")
-
-                if sent_count:
-                    db_manager.save_deal(
-                        title=deal['title'],
-                        original_link=url,
-                        affiliate_link=affiliate_link,
-                        category="INSTANT POST",
-                        product_image=deal.get('image', ''),
-                        post_type="instant",
-                    )
-                    print(f"[INSTANT POST] Deal posted: {deal['title'][:40]}...")
-                else:
-                    print("[INSTANT POST] Two-photo delivery failed; deal not marked sent.")
+                if deal:
+                    cleanup_deal_media(deal)
             finally:
-                cleanup_deal_media(deal)
+                cleanup_thread()
+                _instant_post_slot.release()
 
-        except Exception as e:
-            print(f"[INSTANT POST] Error: {e}")
-
-    # Background thread mein chalao taaki bot loop na ruke
-    thread = threading.Thread(target=process_instant_post, args=(product_url, post_format), daemon=True)
-    thread.start()
-
-    return jsonify({"status": "success", "message": "🚀 Processing shuru ho gaya! 10-15 sec mein Telegram par post ho jayega."})
+    try:
+        threading.Thread(target=process_instant_post, args=(product_url, post_format), daemon=True).start()
+    except Exception:
+        _instant_post_slot.release()
+        raise
+    return jsonify(status='success', message='Processing accepted. Delivery is not confirmed yet; check logs and post history.'), 202
 
 # ==========================================
 # 📋 POST HISTORY TAB
@@ -556,14 +528,14 @@ def get_logs():
     log_file_path = os.path.join(parent_dir, 'bot.log')
 
     if not os.path.exists(log_file_path):
-        return "⏳ Bot start ho raha hai... Logs abhi aana baaki hain."
+        return Response("Waiting for bot logs.", mimetype="text/plain")
 
     try:
         with open(log_file_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-            return "".join(lines[-100:])
+            return Response("".join(lines[-100:]), mimetype="text/plain")
     except Exception as e:
-        return f"Error reading logs: {str(e)}"
+        return Response("Error reading logs.", status=500, mimetype="text/plain")
 
 @app.route('/system_stats')
 @login_required
@@ -585,10 +557,10 @@ def export_logs():
 @login_required
 @csrf_required
 def restart_bot():
-    log_file_path = os.path.join(parent_dir, 'bot.log')
-    with open(log_file_path, 'a', encoding='utf-8') as f:
-        f.write("\n[SYSTEM] 🔄 Restart Command Received! (AWS server par yeh bot ko asaliyat mein restart karega)\n")
-    return jsonify({"status": "success"})
+    from runtime_control import request_restart
+    if not request_restart():
+        return jsonify(status='error', message='Bot worker is not running in this process. Start main.py.'), 503
+    return jsonify(status='success', message='Restart requested; waiting for active work to finish.'), 202
 
 @app.route('/clear_logs', methods=['POST'])
 @login_required
@@ -610,4 +582,4 @@ def toggle_bot():
 
 if __name__ == '__main__':
     db_manager.init_db()
-    app.run(debug=True, port=5000)
+    app.run(host=os.environ.get('DASHBOARD_HOST', '127.0.0.1'), debug=False, port=5000)

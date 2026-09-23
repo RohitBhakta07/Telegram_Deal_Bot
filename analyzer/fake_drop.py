@@ -7,8 +7,11 @@ import re
 def _parse_rupees(value):
     if value is None:
         return 0
-    digits = re.sub(r"[^\d]", "", str(value))
-    return int(digits) if digits else 0
+    match = re.search(r"-?\d[\d,]*(?:\.\d+)?", str(value))
+    if not match:
+        return 0
+    amount = float(match.group().replace(",", ""))
+    return int(amount) if amount.is_integer() else amount
 
 
 def _parse_discount_percent(discount_percent):

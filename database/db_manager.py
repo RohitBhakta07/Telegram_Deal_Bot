@@ -65,6 +65,8 @@ def _check_password(password, stored_hash):
 
 def validate_admin_password(password):
     """Return (valid, message) for dashboard password policy."""
+    if len((password or '').encode('utf-8')) > 72:
+        return False, "Password must be at most 72 UTF-8 bytes."
     if len(password or "") < 12:
         return False, "Password must be at least 12 characters."
     if not any(char.isalpha() for char in password):
@@ -78,6 +80,12 @@ def validate_admin_password(password):
 def init_db():
     conn = _get_connection()
     cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS channel_deliveries (
+        original_link TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        delivered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (original_link, channel_id)
+    )''')
 
     # 1. Sent Deals Table (History record ke liye)
     cursor.execute('''
@@ -465,6 +473,7 @@ def clear_all_deals():
     try:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM sent_deals")
+        cursor.execute("DELETE FROM channel_deliveries")
         conn.commit()
     finally:
         conn.close()
@@ -474,6 +483,9 @@ def delete_oldest_deals(count=50):
     conn = _get_connection()
     try:
         cursor = conn.cursor()
+        cursor.execute('''DELETE FROM channel_deliveries WHERE original_link IN (
+            SELECT original_link FROM sent_deals ORDER BY id ASC LIMIT ?
+        )''', (count,))
         cursor.execute("""
             DELETE FROM sent_deals WHERE id IN (
                 SELECT id FROM sent_deals ORDER BY id ASC LIMIT ?
@@ -488,6 +500,12 @@ def is_link_already_sent(original_link):
     conn = _get_connection()
     try:
         cursor = conn.cursor()
+        cursor.execute('SELECT channel_id FROM channel_deliveries WHERE original_link=?', (original_link,))
+        delivered = {row[0] for row in cursor.fetchall()}
+        if delivered:
+            cursor.execute('SELECT channel_id FROM channels')
+            channels = {row[0] for row in cursor.fetchall()}
+            return bool(channels) and channels.issubset(delivered)
         cursor.execute("SELECT id FROM sent_deals WHERE original_link=?", (original_link,))
         result = cursor.fetchone()
         return result is not None
@@ -508,6 +526,25 @@ def save_deal(title, original_link, affiliate_link, category="General", product_
             conn.close()
     except sqlite3.IntegrityError:
         pass
+
+
+def delivered_channels(original_link):
+    conn = _get_connection()
+    try:
+        return {row[0] for row in conn.execute(
+            'SELECT channel_id FROM channel_deliveries WHERE original_link=?', (original_link,))}
+    finally:
+        conn.close()
+
+
+def record_channel_delivery(original_link, channel_id):
+    conn = _get_connection()
+    try:
+        conn.execute('INSERT OR IGNORE INTO channel_deliveries (original_link, channel_id) VALUES (?, ?)',
+                     (original_link, channel_id))
+        conn.commit()
+    finally:
+        conn.close()
 
 # --- SETTINGS FUNCTIONS ---
 def get_setting(key, default_value=None):
